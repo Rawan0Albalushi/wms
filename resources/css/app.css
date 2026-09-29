@@ -1489,7 +1489,7 @@ td input[type='number'] {
     font-weight: 600;
 }
 
-.rack { display: grid; gap: 6px; padding: 16px; }
+.rack { display: grid; gap: 6px; padding: 16px; overflow-x: auto; }
 
 .rack-row, .rack-cols {
     display: grid;

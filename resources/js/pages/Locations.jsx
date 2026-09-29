@@ -21,7 +21,7 @@ export default function Locations() {
     const { data, loading, error, reload } = useData('/locations');
     const rows = (data || []).filter((location) => !active || location.code === active);
     const activeRow = (data || []).find((location) => location.code === active);
-    const bays = (data || []).filter((location) => location.kind !== 'storage' || location.zone !== 'S1');
+    const bays = (data || []).filter((location) => location.kind !== 'storage');
 
     async function removeLocation(id) {
         try {
@@ -47,7 +47,7 @@ export default function Locations() {
                 <SheetBar title={t('map')} />
                 <Load loading={loading} error={error}>
                     {data ? <Rack locations={data} active={active} onPick={setActive} /> : null}
-                    <div className="bays">
+                    {bays.length ? <div className="bays">
                         {bays.map((bay) => (
                             <button key={bay.id} type="button" className={bay.image_url ? 'bay bay-photo' : 'bay'} onClick={() => setActive(active === bay.code ? '' : bay.code)}>
                                 {bay.image_url ? <img className="thumb" src={bay.image_url} alt="" /> : null}
@@ -57,7 +57,7 @@ export default function Locations() {
                                 </span>
                             </button>
                         ))}
-                    </div>
+                    </div> : null}
                 </Load>
             </div>
             <div className="sheet">
