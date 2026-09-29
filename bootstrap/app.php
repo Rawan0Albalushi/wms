@@ -19,6 +19,9 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
+        // Render terminates TLS, so forwarded proxy headers must be trusted.
+        $middleware->trustProxies(at: '*');
+
         $middleware->api(prepend: [
             EncryptCookies::class,
             AddQueuedCookiesToResponse::class,
