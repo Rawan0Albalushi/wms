@@ -272,6 +272,79 @@ export function Metrics({ items }) {
     );
 }
 
+export function usePaged(rows, resetKey = '', size = 50) {
+    const [page, setPage] = useState(1);
+    const [seen, setSeen] = useState(resetKey);
+    const list = Array.isArray(rows) ? rows : [];
+    const pages = Math.max(1, Math.ceil(list.length / size));
+
+    if (seen !== resetKey) {
+        setSeen(resetKey);
+        setPage(1);
+    } else if (page > pages) {
+        setPage(pages);
+    }
+
+    const current = Math.min(page, pages);
+    const start = (current - 1) * size;
+
+    return {
+        rows: list.slice(start, start + size),
+        page: current,
+        pages,
+        total: list.length,
+        from: list.length === 0 ? 0 : start + 1,
+        to: Math.min(start + size, list.length),
+        setPage,
+    };
+}
+
+export function Pager({ page, pages, total, from, to, onPage }) {
+    const { t } = useLocale();
+    const nav = useRef(null);
+
+    function go(next) {
+        onPage(next);
+        const root = nav.current?.closest('.sheet, .alert-list');
+        root?.scrollIntoView({ block: 'start' });
+    }
+
+    if (pages < 2) {
+        return null;
+    }
+
+    const width = 5;
+    let start = Math.max(1, page - 2);
+    let end = Math.min(pages, start + width - 1);
+    start = Math.max(1, end - width + 1);
+    const numbers = [];
+
+    for (let number = start; number <= end; number += 1) {
+        numbers.push(number);
+    }
+
+    return (
+        <nav className="pager" ref={nav} aria-label={t('page.label')}>
+            <p className="pager-range">{t('page.range').replace('{from}', from).replace('{to}', to).replace('{total}', total)}</p>
+            <div className="pager-nav">
+                <button type="button" className="btn ghost small" disabled={page <= 1} onClick={() => go(page - 1)}>{t('page.prev')}</button>
+                {numbers.map((number) => (
+                    <button
+                        key={number}
+                        type="button"
+                        className={number === page ? 'btn small' : 'btn ghost small'}
+                        aria-current={number === page ? 'page' : undefined}
+                        onClick={() => go(number)}
+                    >
+                        {number}
+                    </button>
+                ))}
+                <button type="button" className="btn ghost small" disabled={page >= pages} onClick={() => go(page + 1)}>{t('page.next')}</button>
+            </div>
+        </nav>
+    );
+}
+
 export function SheetBar({ title, count, children }) {
     const { t } = useLocale();
 

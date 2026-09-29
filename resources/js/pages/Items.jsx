@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api, errorText, formatQty, label, ping, readForm, syncImage } from '../api';
 import { useAuth } from '../auth';
-import { Editor, Field, Load, PageHead, PhotoField, RowActions, SheetBar, useData, Who } from '../components/ui';
+import { Editor, Field, Load, PageHead, Pager, PhotoField, RowActions, SheetBar, useData, usePaged, Who } from '../components/ui';
 import { useLocale } from '../i18n';
 
 export default function Items() {
@@ -18,6 +18,7 @@ export default function Items() {
     const created = useRef(null);
     const { data, loading, error, reload } = useData(`/items?q=${encodeURIComponent(query)}`);
     const options = useData('/options');
+    const page = usePaged(data || [], query);
 
     useEffect(() => {
         const timer = setTimeout(() => setQuery(q), 200);
@@ -64,7 +65,7 @@ export default function Items() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {(data || []).map((item) => (
+                                {page.rows.map((item) => (
                                     <tr key={item.id}>
                                         <td><Who code={item.code} name={label(item, locale)} to={`/items/${item.id}`} image={item.image_url} /></td>
                                         <td className="mono">{item.part_number || '—'}</td>
@@ -85,6 +86,7 @@ export default function Items() {
                         </table>
                         {data?.length === 0 ? <p className="empty">{t('empty')}</p> : null}
                     </div>
+                    <Pager page={page.page} pages={page.pages} total={page.total} from={page.from} to={page.to} onPage={page.setPage} />
                 </Load>
             </div>
             {open && manage && options.data ? (

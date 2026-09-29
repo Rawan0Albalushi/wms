@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, errorText, formatQty, label, ping } from '../api';
 import { useAuth } from '../auth';
-import { Load, PageHead, SheetBar, useData, Who } from '../components/ui';
+import { Load, PageHead, Pager, SheetBar, useData, usePaged, Who } from '../components/ui';
 import { useLocale } from '../i18n';
 
 export default function Counts() {
@@ -13,6 +13,7 @@ export default function Counts() {
     const [draft, setDraft] = useState({});
     const [message, setMessage] = useState('');
     const [pending, setPending] = useState(false);
+    const lines = usePaged(data?.open?.lines || [], data?.open?.id || '');
 
     useEffect(() => {
         if (!data?.open) {
@@ -90,7 +91,7 @@ export default function Counts() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {open.lines.map((line) => {
+                                    {lines.rows.map((line) => {
                                         const counted = draft[line.id];
                                         const variance = counted === '' || counted === undefined ? null : Number(counted) - line.system_qty;
 
@@ -117,6 +118,7 @@ export default function Counts() {
                                 </tbody>
                             </table>
                         </div>
+                        <Pager page={lines.page} pages={lines.pages} total={lines.total} from={lines.from} to={lines.to} onPage={lines.setPage} />
                     </section>
                 ) : <p className="empty">{t('empty')}</p>}
             </Load>

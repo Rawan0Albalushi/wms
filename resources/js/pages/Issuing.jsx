@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api, formatDate, formatQty, label, ping, readForm } from '../api';
-import { Editor, Field, Load, PageHead, SheetBar, StockSelect, useData, Who } from '../components/ui';
+import { Editor, Field, Load, PageHead, Pager, SheetBar, StockSelect, useData, usePaged, Who } from '../components/ui';
 import { useLocale } from '../i18n';
 
 export default function Issuing() {
@@ -11,6 +11,7 @@ export default function Issuing() {
     const options = useData('/options');
     const stock = useData('/inventory');
     const rows = (stock.data?.movements || []).filter((row) => row.type === 'out' || row.type === 'consume');
+    const page = usePaged(rows, rows.length);
 
     return (
         <>
@@ -38,7 +39,7 @@ export default function Issuing() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {rows.map((row) => (
+                                {page.rows.map((row) => (
                                     <tr key={row.id}>
                                         <td className="mono">{formatDate(row.happened_at)}</td>
                                         <td><Who code={row.item} name={label(row, locale)} image={row.image_url} /></td>
@@ -54,6 +55,7 @@ export default function Issuing() {
                         </table>
                         {rows.length === 0 ? <p className="empty">{t('empty')}</p> : null}
                     </div>
+                    <Pager page={page.page} pages={page.pages} total={page.total} from={page.from} to={page.to} onPage={page.setPage} />
                 </div>
             </Load>
             {open && options.data ? (

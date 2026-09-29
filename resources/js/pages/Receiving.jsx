@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api, formatDate, formatQty, label, ping, readForm } from '../api';
-import { Editor, Field, ItemSelect, Load, PageHead, PlaceSelect, SheetBar, useData, Who } from '../components/ui';
+import { Editor, Field, ItemSelect, Load, PageHead, Pager, PlaceSelect, SheetBar, useData, usePaged, Who } from '../components/ui';
 import { useLocale } from '../i18n';
 
 export default function Receiving() {
@@ -16,6 +16,7 @@ export default function Receiving() {
     const loading = options.loading || stock.loading || buying.loading;
     const error = options.error || stock.error || buying.error;
     const receipts = (stock.data?.movements || []).filter((row) => row.type === 'in');
+    const page = usePaged(receipts, receipts.length);
     const order = (buying.data?.orders || []).find((row) => String(row.id) === orderId);
     const itemChoices = order && options.data
         ? options.data.items.filter((item) => order.lines.some((line) => line.item_id === item.id && line.remaining > 0))
@@ -67,7 +68,7 @@ export default function Receiving() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {receipts.map((row) => (
+                                {page.rows.map((row) => (
                                     <tr key={row.id}>
                                         <td className="mono">{formatDate(row.happened_at)}</td>
                                         <td><Who code={row.item} name={label(row, locale)} image={row.image_url} /></td>
@@ -81,6 +82,7 @@ export default function Receiving() {
                             </tbody>
                         </table>
                     </div>
+                    <Pager page={page.page} pages={page.pages} total={page.total} from={page.from} to={page.to} onPage={page.setPage} />
                 </div>
             </Load>
             {open && options.data ? (

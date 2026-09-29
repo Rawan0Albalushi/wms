@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api, formatDate, formatQty, label, ping, readForm } from '../api';
 import { useAuth } from '../auth';
-import { Editor, Field, Lines, Load, PageHead, SheetBar, Status, useData, Who } from '../components/ui';
+import { Editor, Field, Lines, Load, PageHead, Pager, SheetBar, Status, useData, usePaged, Who } from '../components/ui';
 import { useLocale } from '../i18n';
 
 export default function Procurement() {
@@ -14,6 +14,8 @@ export default function Procurement() {
     const [lines, setLines] = useState([{ item_id: '', quantity: '' }]);
     const { data, loading, error, reload } = useData('/procurement');
     const options = useData('/options');
+    const orders = usePaged(data?.orders || [], data?.orders?.length || 0);
+    const shipments = usePaged(data?.shipments || [], data?.shipments?.length || 0);
 
     function openMode(next) {
         const query = new URLSearchParams(params);
@@ -73,7 +75,7 @@ export default function Procurement() {
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {data.orders.map((order) => (
+                                            {orders.rows.map((order) => (
                                                 <tr key={order.id}>
                                                     <td><Link className="mono ref" to={`/procurement/orders/${order.id}`}>{order.number}</Link></td>
                                                     <td>{locale === 'ar' ? order.supplier : order.supplier_en}</td>
@@ -95,6 +97,7 @@ export default function Procurement() {
                                         </tbody>
                                     </table>
                                 </div>
+                                <Pager page={orders.page} pages={orders.pages} total={orders.total} from={orders.from} to={orders.to} onPage={orders.setPage} />
                             </section>
                         <section className="sheet">
                             <SheetBar title={t('btn.shipment')} count={data.shipments.length} />
@@ -110,7 +113,7 @@ export default function Procurement() {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {data.shipments.map((row) => (
+                                        {shipments.rows.map((row) => (
                                             <tr key={row.id}>
                                                 <td><Link className="mono ref" to={`/procurement/shipments/${row.id}`}>{row.ci_number}</Link></td>
                                                 <td className="mono">{row.order_number}</td>
@@ -130,6 +133,7 @@ export default function Procurement() {
                                     </tbody>
                                 </table>
                             </div>
+                            <Pager page={shipments.page} pages={shipments.pages} total={shipments.total} from={shipments.from} to={shipments.to} onPage={shipments.setPage} />
                         </section>
                     </div>
                 ) : null}
@@ -214,16 +218,21 @@ export default function Procurement() {
 }
 
 function Simple({ rows, heads, numeric = [], render }) {
+    const page = usePaged(rows, rows.length);
+
     return (
-        <div className="table-wrap">
-            <table>
-                <thead>
-                    <tr>{heads.map((head, index) => <th key={`${head}-${index}`} scope="col" className={numeric.includes(index) ? 'num' : ''}>{head}</th>)}</tr>
-                </thead>
-                <tbody>
-                    {rows.map((row) => <tr key={row.id}>{render(row)}</tr>)}
-                </tbody>
-            </table>
-        </div>
+        <>
+            <div className="table-wrap">
+                <table>
+                    <thead>
+                        <tr>{heads.map((head, index) => <th key={`${head}-${index}`} scope="col" className={numeric.includes(index) ? 'num' : ''}>{head}</th>)}</tr>
+                    </thead>
+                    <tbody>
+                        {page.rows.map((row) => <tr key={row.id}>{render(row)}</tr>)}
+                    </tbody>
+                </table>
+            </div>
+            <Pager page={page.page} pages={page.pages} total={page.total} from={page.from} to={page.to} onPage={page.setPage} />
+        </>
     );
 }

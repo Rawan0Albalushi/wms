@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { formatDate, formatQty, label } from '../api';
 import { useAuth } from '../auth';
 import Rack from '../components/Rack';
-import { Condition, Load, PageHead, PlaceBanner, SheetBar, useData, Who } from '../components/ui';
+import { Condition, Load, PageHead, Pager, PlaceBanner, SheetBar, useData, usePaged, Who } from '../components/ui';
 import { useLocale } from '../i18n';
 
 export default function Inventory() {
@@ -12,6 +12,7 @@ export default function Inventory() {
     const [active, setActive] = useState('');
     const { data, loading, error } = useData('/inventory');
     const positions = (data?.positions || []).filter((row) => !active || row.location === active);
+    const page = usePaged(positions, active);
     const place = (data?.locations || []).find((row) => row.code === active);
 
     return (
@@ -25,7 +26,7 @@ export default function Inventory() {
                             <Rack locations={data.locations} active={active} onPick={setActive} />
                         </div>
                         <div className="sheet">
-                            <SheetBar title={active || t('batch')} count={positions.length}>
+                            <SheetBar title={active || t('batch')} count={page.total}>
                                 {active ? <button type="button" className="btn ghost small" onClick={() => setActive('')}>{t('show_all')}</button> : null}
                             </SheetBar>
                             <PlaceBanner place={place} />
@@ -43,7 +44,7 @@ export default function Inventory() {
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        {positions.map((row) => (
+                                        {page.rows.map((row) => (
                                             <tr key={row.id}>
                                                 <td className="mono">{row.batch_no}</td>
                                                 <td><Who code={row.item_code} name={label(row, locale)} to={`/items/${row.item_id}`} image={row.image_url} /></td>
@@ -64,6 +65,7 @@ export default function Inventory() {
                                 </table>
                                 {positions.length === 0 ? <p className="empty">{t('empty')}</p> : null}
                             </div>
+                            <Pager page={page.page} pages={page.pages} total={page.total} from={page.from} to={page.to} onPage={page.setPage} />
                         </div>
                     </div>
                 ) : null}

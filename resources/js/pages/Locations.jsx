@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { api, errorText, formatQty, ping, readForm, syncImage } from '../api';
 import { useAuth } from '../auth';
 import Rack from '../components/Rack';
-import { Editor, Field, Load, PageHead, Panel, PhotoField, PlaceBanner, RecordView, RowActions, SheetBar, Thumb, useData } from '../components/ui';
+import { Editor, Field, Load, PageHead, Pager, Panel, PhotoField, PlaceBanner, RecordView, RowActions, SheetBar, Thumb, useData, usePaged } from '../components/ui';
 import { useLocale } from '../i18n';
 
 export default function Locations() {
@@ -20,6 +20,8 @@ export default function Locations() {
     const created = useRef(null);
     const { data, loading, error, reload } = useData('/locations');
     const rows = (data || []).filter((location) => !active || location.code === active);
+    const listed = rows.filter((row) => active || row.on_hand > 0 || row.kind !== 'storage');
+    const page = usePaged(listed, active);
     const activeRow = (data || []).find((location) => location.code === active);
     const bays = (data || []).filter((location) => location.kind !== 'storage');
 
@@ -61,7 +63,7 @@ export default function Locations() {
                 </Load>
             </div>
             <div className="sheet">
-                <SheetBar title={t('location_list')} count={data ? rows.length : undefined}>
+                <SheetBar title={t('location_list')} count={data ? listed.length : undefined}>
                     {active ? <button type="button" className="btn ghost small" onClick={() => setActive('')}>{t('show_all')}</button> : null}
                 </SheetBar>
                 <PlaceBanner place={activeRow} onPhoto={manage ? setPhoto : undefined} />
@@ -77,8 +79,8 @@ export default function Locations() {
                                 <th scope="col">{t('actions')}</th>
                             </tr>
                         </thead>
-                        <tbody>
-                            {rows.filter((row) => active || row.on_hand > 0 || row.kind !== 'storage').map((row) => (
+                            <tbody>
+                            {page.rows.map((row) => (
                                 <tr key={row.id}>
                                     <td>
                                         <div className="who who-photo">
@@ -102,6 +104,7 @@ export default function Locations() {
                         </tbody>
                     </table>
                 </div>
+                <Pager page={page.page} pages={page.pages} total={page.total} from={page.from} to={page.to} onPage={page.setPage} />
             </div>
             {open && manage ? (
                 <Editor title={t('btn.location')} onClose={() => { created.current = null; setOpen(false); }} onSave={async (form) => {
