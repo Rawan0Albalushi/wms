@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { formatDate, formatQty, label, matchesText } from '../api';
 import { useAuth } from '../auth';
-import Rack from '../components/Rack';
+import Rack, { BinHistory } from '../components/Rack';
 import { Condition, Load, PageHead, Pager, PlaceBanner, SheetBar, useData, usePaged, Who } from '../components/ui';
 import { useLocale } from '../i18n';
 
@@ -27,6 +27,7 @@ export default function Inventory() {
                         <div className="sheet">
                             <SheetBar title={t('map')} />
                             <Rack locations={data.locations} active={active} onPick={setActive} />
+                            <BinHistory place={place} />
                         </div>
                         <div className="sheet">
                             <SheetBar title={active || t('batch')} count={page.total}>

@@ -8,6 +8,7 @@ use App\Models\Item;
 use App\Models\JobOrder;
 use App\Models\Location;
 use App\Models\Movement;
+use App\Models\RecordedPosition;
 use App\Models\User;
 use Database\Seeders\AccessSeeder;
 use Database\Seeders\WarehouseSeeder;
@@ -182,6 +183,84 @@ class StockFlowTest extends TestCase
         ])->assertStatus(422);
     }
 
+    public function test_emptied_bin_keeps_the_item_that_left(): void
+    {
+        $this->seed(WarehouseSeeder::class);
+        $this->act();
+
+        $item = Item::query()->where('code', '268625')->firstOrFail();
+        $bin = Location::query()->where('code', 'S1F1')->firstOrFail();
+        $unused = Location::query()->where('code', 'S1F2')->firstOrFail();
+        $stocked = Location::query()->where('code', 'S1A1')->firstOrFail();
+
+        $this->assertNull($this->locationRow($unused->code)['cleared']);
+        $this->assertNull($this->locationRow($stocked->code)['cleared']);
+        $this->assertGreaterThan(0, $this->locationRow($stocked->code)['on_hand']);
+
+        $this->postJson('/api/receipts', [
+            'item_id' => $item->id,
+            'location_id' => $bin->id,
+            'batch_no' => 'B950',
+            'quantity' => 4,
+            'condition' => 'new',
+        ])->assertCreated();
+
+        $this->assertNull($this->locationRow($bin->code)['cleared']);
+
+        $position = Balance::query()->where('location_id', $bin->id)->firstOrFail();
+
+        $this->postJson('/api/issues', [
+            'position_id' => $position->id,
+            'quantity' => 4,
+            'reason' => 'maintenance',
+        ])->assertCreated();
+
+        $cleared = $this->locationRow($bin->code);
+
+        $this->assertSame(0, $cleared['on_hand']);
+        $this->assertSame('268625', $cleared['cleared']['item_code']);
+        $this->assertSame('out', $cleared['cleared']['type']);
+        $this->assertSame(4, $cleared['cleared']['quantity']);
+        $this->assertNull($this->locationRow($unused->code)['cleared']);
+
+        $history = $this->getJson('/api/locations/'.$bin->id.'/history')->assertOk()->json();
+
+        $this->assertSame(['out', 'in'], array_column($history, 'type'));
+        $this->assertSame('S1F1', $history[0]['from']);
+        $this->assertSame('S1F1', $history[1]['to']);
+    }
+
+    public function test_empty_bin_shows_the_recorded_item_that_used_to_be_there(): void
+    {
+        $this->seed(WarehouseSeeder::class);
+        $this->act();
+
+        $item = Item::query()->where('code', '268625')->firstOrFail();
+        $bin = Location::query()->where('code', 'S1F2')->firstOrFail();
+
+        RecordedPosition::query()->create([
+            'item_id' => $item->id,
+            'location_id' => $bin->id,
+            'quantity' => 4,
+            'condition' => 'new',
+            'recorded_on' => '2026-09-01',
+            'import_key' => 'test-s1f2',
+        ]);
+
+        $row = $this->locationRow($bin->code);
+
+        $this->assertSame(0, $row['on_hand']);
+        $this->assertSame('268625', $row['cleared']['item_code']);
+        $this->assertSame('recorded', $row['cleared']['type']);
+
+        $history = $this->getJson('/api/locations/'.$bin->id.'/history')->assertOk()->json();
+
+        $this->assertSame('recorded', $history[0]['type']);
+        $this->assertSame('268625', $history[0]['item_code']);
+        $this->assertSame(4, $history[0]['quantity']);
+        $this->assertSame('S1F2', $history[0]['to']);
+    }
+
     public function test_home_queue_points_at_the_next_warehouse_step(): void
     {
         $this->seed(WarehouseSeeder::class);
@@ -199,6 +278,18 @@ class StockFlowTest extends TestCase
         $this->seed(AccessSeeder::class);
         $user = User::query()->where('email', 'keeper@wms.test')->firstOrFail();
         $this->actingAs($user);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function locationRow(string $code): array
+    {
+        $row = collect($this->getJson('/api/locations')->assertOk()->json())->firstWhere('code', $code);
+
+        $this->assertIsArray($row);
+
+        return $row;
     }
 
     private function onHand(Item $item): int

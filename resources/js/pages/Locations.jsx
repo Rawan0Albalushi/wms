@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api, errorText, formatQty, matchesText, ping, readForm, syncImage } from '../api';
 import { useAuth } from '../auth';
-import Rack from '../components/Rack';
+import Rack, { BinHistory } from '../components/Rack';
 import { Editor, Field, Load, PageHead, Pager, Panel, PhotoField, PlaceBanner, RecordView, RowActions, SheetBar, Thumb, useData, usePaged } from '../components/ui';
 import { useLocale } from '../i18n';
 
@@ -50,6 +50,7 @@ export default function Locations() {
                 <SheetBar title={t('map')} />
                 <Load loading={loading} error={error}>
                     {data ? <Rack locations={data} active={active} onPick={setActive} /> : null}
+                    <BinHistory place={activeRow} />
                     {bays.length ? <div className="bays">
                         {bays.map((bay) => (
                             <button key={bay.id} type="button" className={bay.image_url ? 'bay bay-photo' : 'bay'} onClick={() => setActive(active === bay.code ? '' : bay.code)}>

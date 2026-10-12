@@ -1532,6 +1532,7 @@ td input[type='number'] {
 }
 
 .cell {
+    min-width: 0;
     min-height: 56px;
     border: 1px solid var(--line);
     border-radius: 8px;
@@ -1546,13 +1547,60 @@ td input[type='number'] {
 
 .cell b { font-family: var(--mono); font-size: 11px; font-weight: 500; }
 
-.cell small { font-family: var(--mono); font-size: 13px; color: var(--muted); }
+.cell small {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--muted);
+}
 
-.cell[data-hot='1'] { background: var(--green-soft); border-color: #b7dfcf; }
+.cell[data-state='stock'] { background: var(--green-soft); border-color: #b7dfcf; }
 
-.cell[data-hot='1'] small { color: var(--green); }
+.cell[data-state='stock'] small { color: var(--green); }
 
-.cell.on { border-color: var(--green); box-shadow: inset 0 0 0 1px var(--green); background: var(--mint); }
+.cell[data-state='empty'] { background: #fff1f4; border-color: #f3c3cf; }
+
+.cell[data-state='empty'] b,
+.cell[data-state='empty'] small { color: var(--danger); }
+
+.cell.on[data-state='stock'] { border-color: var(--green); box-shadow: inset 0 0 0 1px var(--green); background: var(--mint); }
+
+.cell.on[data-state='empty'] { border-color: var(--danger); box-shadow: inset 0 0 0 1px var(--danger); background: #ffe4ea; }
+
+.rack-key {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 16px;
+    padding: 2px 16px 14px;
+    color: var(--muted);
+    font-size: 13px;
+}
+
+.rack-key span { display: inline-flex; align-items: center; gap: 6px; }
+
+.rack-key i {
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    border: 1px solid var(--line);
+}
+
+.rack-key i[data-state='stock'] { background: var(--green-soft); border-color: #b7dfcf; }
+
+.rack-key i[data-state='empty'] { background: #fff1f4; border-color: #f3c3cf; }
+
+.bin-history {
+    display: grid;
+    gap: 8px;
+    padding: 0 16px 16px;
+}
+
+.bin-history h3 { margin: 0; font-size: 14px; font-weight: 600; }
+
+.bin-history .empty { padding: 8px 0 4px; }
 
 .bays { display: flex; gap: 8px; padding: 0 16px 16px; flex-wrap: wrap; }
 

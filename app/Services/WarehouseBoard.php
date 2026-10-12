@@ -99,16 +99,21 @@ class WarehouseBoard
      */
     public function locations(): array
     {
-        $recorded = RecordedPosition::query()
+        $recordedCounts = RecordedPosition::query()
             ->selectRaw('location_id, count(*) as recorded_lines')
             ->whereNotNull('location_id')
             ->groupBy('location_id')
             ->pluck('recorded_lines', 'location_id');
 
-        return Location::query()
+        $locations = Location::query()
             ->withSum('balances as on_hand', 'quantity')
             ->orderBy('code')
-            ->get()
+            ->get();
+        $emptyIds = $locations->filter(fn (Location $location) => (int) $location->on_hand === 0)->pluck('id');
+        $cleared = $this->lastDepartures($emptyIds);
+        $recordedMarks = $this->recordedMarks($emptyIds);
+
+        return $locations
             ->map(fn (Location $location) => [
                 'id' => $location->id,
                 'code' => $location->code,
@@ -118,7 +123,67 @@ class WarehouseBoard
                 'kind' => $location->kind,
                 'image_url' => StoredImage::url($location->image_path),
                 'on_hand' => (int) $location->on_hand,
-                'recorded_lines' => (int) ($recorded[$location->id] ?? 0),
+                'recorded_lines' => (int) ($recordedCounts[$location->id] ?? 0),
+                'cleared' => $cleared[$location->id] ?? $recordedMarks[$location->id] ?? null,
+            ])
+            ->all();
+    }
+
+    /**
+     * Recent movements that put stock into a location or took it out.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function locationHistory(Location $location): array
+    {
+        $movements = Movement::query()
+            ->with([
+                'item:id,code,name_ar,name_en',
+                'fromLocation:id,code',
+                'toLocation:id,code',
+            ])
+            ->where(function (Builder $query) use ($location) {
+                $query->where('from_location_id', $location->id)
+                    ->orWhere('to_location_id', $location->id);
+            })
+            ->orderByDesc('happened_at')
+            ->orderByDesc('id')
+            ->limit(8)
+            ->get()
+            ->map(fn (Movement $movement) => [
+                'id' => $movement->id,
+                'type' => $movement->type,
+                'quantity' => $movement->quantity,
+                'happened_at' => $movement->happened_at,
+                'item_code' => $movement->item->code,
+                'name_ar' => $movement->item->name_ar,
+                'name_en' => $movement->item->name_en,
+                'from' => $movement->fromLocation?->code,
+                'to' => $movement->toLocation?->code,
+            ])
+            ->all();
+
+        if ($movements !== []) {
+            return $movements;
+        }
+
+        return RecordedPosition::query()
+            ->with('item:id,code,name_ar,name_en')
+            ->where('location_id', $location->id)
+            ->orderByDesc('recorded_on')
+            ->orderByDesc('id')
+            ->limit(8)
+            ->get()
+            ->map(fn (RecordedPosition $row) => [
+                'id' => $row->id,
+                'type' => 'recorded',
+                'quantity' => $row->quantity,
+                'happened_at' => optional($row->recorded_on)->toDateString(),
+                'item_code' => $row->item->code,
+                'name_ar' => $row->item->name_ar,
+                'name_en' => $row->item->name_en,
+                'from' => null,
+                'to' => $location->code,
             ])
             ->all();
     }
@@ -794,7 +859,84 @@ class WarehouseBoard
                 'in' => (int) $slice->where('type', 'in')->sum('quantity'),
                 'out' => (int) $slice->whereIn('type', ['out', 'consume'])->sum('quantity'),
             ];
-        })->all();
+        })            ->all();
+    }
+
+    /**
+     * Latest workbook line for an empty location that has no stock movement.
+     *
+     * @param  Collection<int, int>  $locationIds
+     * @return array<int, array<string, mixed>>
+     */
+    private function recordedMarks(Collection $locationIds): array
+    {
+        if ($locationIds->isEmpty()) {
+            return [];
+        }
+
+        $marks = [];
+
+        RecordedPosition::query()
+            ->with('item:id,code,name_ar,name_en')
+            ->whereIn('location_id', $locationIds)
+            ->orderByDesc('recorded_on')
+            ->orderByDesc('id')
+            ->get()
+            ->each(function (RecordedPosition $row) use (&$marks) {
+                if (isset($marks[$row->location_id])) {
+                    return;
+                }
+
+                $marks[$row->location_id] = [
+                    'item_code' => $row->item->code,
+                    'name_ar' => $row->item->name_ar,
+                    'name_en' => $row->item->name_en,
+                    'quantity' => $row->quantity,
+                    'type' => 'recorded',
+                    'happened_at' => optional($row->recorded_on)->toDateString(),
+                ];
+            });
+
+        return $marks;
+    }
+
+    /**
+     * Last movement that took stock out of each currently empty location.
+     *
+     * @param  Collection<int, int>  $locationIds
+     * @return array<int, array<string, mixed>>
+     */
+    private function lastDepartures(Collection $locationIds): array
+    {
+        if ($locationIds->isEmpty()) {
+            return [];
+        }
+
+        $ids = Movement::query()
+            ->selectRaw('MAX(id) as id')
+            ->whereIn('from_location_id', $locationIds)
+            ->groupBy('from_location_id')
+            ->pluck('id');
+
+        if ($ids->isEmpty()) {
+            return [];
+        }
+
+        return Movement::query()
+            ->with('item:id,code,name_ar,name_en')
+            ->whereIn('id', $ids)
+            ->get()
+            ->mapWithKeys(fn (Movement $movement) => [
+                $movement->from_location_id => [
+                    'item_code' => $movement->item->code,
+                    'name_ar' => $movement->item->name_ar,
+                    'name_en' => $movement->item->name_en,
+                    'quantity' => $movement->quantity,
+                    'type' => $movement->type,
+                    'happened_at' => $movement->happened_at,
+                ],
+            ])
+            ->all();
     }
 
     /**

@@ -32,6 +32,11 @@ class CatalogController extends Controller
         return $board->locations();
     }
 
+    public function locationHistory(Location $location, WarehouseBoard $board): array
+    {
+        return $board->locationHistory($location);
+    }
+
     public function options(WarehouseBoard $board): array
     {
         return $board->options();
