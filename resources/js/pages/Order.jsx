@@ -16,7 +16,7 @@ export default function Order() {
 
     let next = null;
 
-    if (order && order.status !== 'received') {
+    if (order && order.kind !== 'future' && order.status !== 'received') {
         if (arrived && can('receiving.post')) {
             next = <Link className="btn" to={`/receiving?new=1&shipment=${arrived.id}&order=${order.id}`}>{t('btn.receive')}</Link>;
         } else if (transit && can('procurement.manage')) {
@@ -45,6 +45,7 @@ export default function Order() {
                             <SheetBar title={<span className="mono">{formatDate(order.ordered_on)}</span>} count={order.lines.length}>
                                 <Status value={order.status} />
                             </SheetBar>
+                            {order.notes ? <p className="sheet-note">{order.notes}</p> : null}
                             <div className="table-wrap">
                                 <table>
                                     <thead>

@@ -709,8 +709,15 @@ a { color: inherit; }
 .sheet-tools {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 8px;
     margin-inline-start: auto;
+}
+
+.sheet-tools .filter {
+    width: auto;
+    min-width: 8.5rem;
+    max-width: 14rem;
 }
 
 .count {

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { api, formatDate, formatQty, label, ping, readForm } from '../api';
+import { api, formatDate, formatQty, label, matchesText, ping, readForm } from '../api';
 import { useAuth } from '../auth';
 import { Editor, Field, Lines, Load, PageHead, Pager, SheetBar, Status, useData, usePaged, Who } from '../components/ui';
 import { useLocale } from '../i18n';
@@ -12,10 +12,12 @@ export default function Procurement() {
     const [params, setParams] = useSearchParams();
     const mode = manage && ['request', 'order', 'shipment'].includes(params.get('new')) ? params.get('new') : null;
     const [lines, setLines] = useState([{ item_id: '', quantity: '' }]);
+    const [q, setQ] = useState('');
+    const [kind, setKind] = useState('');
     const { data, loading, error, reload } = useData('/procurement');
     const options = useData('/options');
-    const orders = usePaged(data?.orders || [], data?.orders?.length || 0);
-    const shipments = usePaged(data?.shipments || [], data?.shipments?.length || 0);
+    const orders = usePaged((data?.orders || []).filter((order) => (!kind || (order.kind || 'receipt') === kind) && matchesText(q, [order.number, order.supplier, order.supplier_en, order.notes, order.status, ...(order.lines || []).flatMap((line) => [line.item_code, line.name_ar, line.name_en])])), `${q}|${kind}`);
+    const shipments = usePaged((data?.shipments || []).filter((row) => matchesText(q, [row.ci_number, row.order_number, row.status])), q);
 
     function openMode(next) {
         const query = new URLSearchParams(params);
@@ -62,7 +64,14 @@ export default function Procurement() {
                                 )} heads={[t('reference'), t('item'), t('qty'), t('status')]} />
                             </section>
                             <section className="sheet">
-                                <SheetBar title={t('btn.order')} count={data.orders.length} />
+                                <SheetBar title={t('btn.order')} count={orders.total}>
+                                    <input className="search" value={q} onChange={(event) => setQ(event.target.value)} placeholder={t('search')} aria-label={t('search')} />
+                                    <select className="filter" value={kind} onChange={(event) => setKind(event.target.value)} aria-label={t('filter.orders')}>
+                                        <option value="">{t('filter.orders')}</option>
+                                        <option value="receipt">{t('kind.receipt')}</option>
+                                        <option value="future">{t('kind.future')}</option>
+                                    </select>
+                                </SheetBar>
                                 <div className="table-wrap">
                                     <table>
                                         <thead>
@@ -203,7 +212,7 @@ export default function Procurement() {
                             <Field label={t('order')}>
                                 <select name="purchase_order_id" required defaultValue={params.get('order') || ''}>
                                     <option value="" />
-                                    {(data?.orders || []).map((order) => <option key={order.id} value={order.id}>{order.number}</option>)}
+                                    {(data?.orders || []).filter((order) => order.kind !== 'future').map((order) => <option key={order.id} value={order.id}>{order.number}</option>)}
                                 </select>
                             </Field>
                             <Field label={t('ci')}><input name="ci_number" required /></Field>

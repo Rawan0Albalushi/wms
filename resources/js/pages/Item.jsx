@@ -71,10 +71,18 @@ export default function Item() {
                                     <dt>{t('barcode')}</dt>
                                     <dd className="mono">{item.data.barcode || '—'}</dd>
                                 </div>
-                                <div>
-                                    <dt>{t('unit')}</dt>
-                                    <dd>{item.data.unit}</dd>
-                                </div>
+                                    <div>
+                                        <dt>{t('unit')}</dt>
+                                        <dd>{item.data.unit}{item.data.alt_unit ? ` / ${item.data.alt_unit}` : ''}</dd>
+                                    </div>
+                                    <div>
+                                        <dt>{t('filter.status')}</dt>
+                                        <dd>{item.data.stock_status ? t(`stock.${item.data.stock_status}`) : '—'}</dd>
+                                    </div>
+                                    <div>
+                                        <dt>{t('filter.family')}</dt>
+                                        <dd>{item.data.family || '—'}</dd>
+                                    </div>
                                 <div>
                                     <dt>{t('category')}</dt>
                                     <dd>{label(item.data.category, locale)}</dd>
@@ -122,6 +130,36 @@ export default function Item() {
                                     </tbody>
                                 </table>
                                 {item.data.batches.length === 0 ? <p className="empty">{t('empty')}</p> : null}
+                            </div>
+                        </section>
+                        <section className="sheet">
+                            <SheetBar title={t('recorded.title')} count={item.data.recorded?.length || 0} />
+                            <div className="table-wrap">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th scope="col">{t('location')}</th>
+                                            <th className="num" scope="col">{t('qty')}</th>
+                                            <th scope="col">{t('filter.family')}</th>
+                                            <th scope="col">{t('condition')}</th>
+                                            <th scope="col">{t('reference')}</th>
+                                            <th scope="col">{t('date')}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {(item.data.recorded || []).map((row) => (
+                                            <tr key={row.id}>
+                                                <td className="mono">{row.location || '—'}</td>
+                                                <td className="num">{formatQty(row.quantity)}</td>
+                                                <td>{row.line_type || '—'}</td>
+                                                <td>{row.condition ? <Condition value={row.condition} /> : '—'}</td>
+                                                <td>{row.reference || '—'}</td>
+                                                <td className="mono">{formatDate(row.recorded_on)}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                                {(item.data.recorded || []).length === 0 ? <p className="empty">{t('empty')}</p> : null}
                             </div>
                         </section>
                     </div>

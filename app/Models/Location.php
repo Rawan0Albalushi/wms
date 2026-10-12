@@ -13,4 +13,9 @@ class Location extends Model
     {
         return $this->hasMany(Balance::class);
     }
+
+    public function recordedPositions(): HasMany
+    {
+        return $this->hasMany(RecordedPosition::class);
+    }
 }

@@ -194,3 +194,13 @@ export function label(row, locale, ar = 'name_ar', en = 'name_en') {
 
     return locale === 'ar' ? row[ar] : row[en];
 }
+
+export function matchesText(query, values) {
+    const needle = query.trim().toLowerCase();
+
+    if (!needle) {
+        return true;
+    }
+
+    return values.some((value) => String(value ?? '').toLowerCase().includes(needle));
+}

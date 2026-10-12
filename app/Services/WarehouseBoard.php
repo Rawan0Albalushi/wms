@@ -14,6 +14,7 @@ use App\Models\Location;
 use App\Models\Movement;
 use App\Models\PurchaseOrder;
 use App\Models\PurchaseRequest;
+use App\Models\RecordedPosition;
 use App\Models\Shipment;
 use App\Models\StockCount;
 use App\Models\Supplier;
@@ -85,7 +86,8 @@ class WarehouseBoard
                     ->orWhere('name_ar', 'like', "%{$term}%")
                     ->orWhere('name_en', 'like', "%{$term}%")
                     ->orWhere('part_number', 'like', "%{$term}%")
-                    ->orWhere('barcode', 'like', "%{$term}%");
+                    ->orWhere('barcode', 'like', "%{$term}%")
+                    ->orWhere('family', 'like', "%{$term}%");
             });
         }
 
@@ -97,6 +99,12 @@ class WarehouseBoard
      */
     public function locations(): array
     {
+        $recorded = RecordedPosition::query()
+            ->selectRaw('location_id, count(*) as recorded_lines')
+            ->whereNotNull('location_id')
+            ->groupBy('location_id')
+            ->pluck('recorded_lines', 'location_id');
+
         return Location::query()
             ->withSum('balances as on_hand', 'quantity')
             ->orderBy('code')
@@ -110,6 +118,7 @@ class WarehouseBoard
                 'kind' => $location->kind,
                 'image_url' => StoredImage::url($location->image_path),
                 'on_hand' => (int) $location->on_hand,
+                'recorded_lines' => (int) ($recorded[$location->id] ?? 0),
             ])
             ->all();
     }
@@ -187,6 +196,24 @@ class WarehouseBoard
                 ->orderBy('id')
                 ->get()
                 ->map(fn (Balance $balance) => $this->presentPosition($balance))
+                ->values(),
+            'recorded' => RecordedPosition::query()
+                ->with(['item', 'location'])
+                ->orderBy('id')
+                ->get()
+                ->map(fn (RecordedPosition $row) => [
+                    'id' => $row->id,
+                    'item_id' => $row->item_id,
+                    'item_code' => $row->item->code,
+                    'name_ar' => $row->item->name_ar,
+                    'name_en' => $row->item->name_en,
+                    'location' => $row->location?->code,
+                    'quantity' => $row->quantity,
+                    'condition' => $row->condition,
+                    'line_type' => $row->line_type,
+                    'reference' => $row->reference,
+                    'recorded_on' => optional($row->recorded_on)->toDateString(),
+                ])
                 ->values(),
             'movements' => $this->movements(),
         ];
@@ -266,9 +293,19 @@ class WarehouseBoard
      */
     public function item(Item $item): array
     {
-        $item->load(['category', 'unit', 'supplier', 'batches.balances.location']);
+        $item->load(['category', 'unit', 'supplier', 'batches.balances.location', 'recordedPositions.location']);
+        $presented = $this->presentItem($item);
+        $presented['recorded'] = $item->recordedPositions->map(fn (RecordedPosition $row) => [
+            'id' => $row->id,
+            'location' => $row->location?->code,
+            'quantity' => $row->quantity,
+            'condition' => $row->condition,
+            'reference' => $row->reference,
+            'line_type' => $row->line_type,
+            'recorded_on' => optional($row->recorded_on)->toDateString(),
+        ])->values();
 
-        return $this->presentItem($item);
+        return $presented;
     }
 
     /**
@@ -333,13 +370,14 @@ class WarehouseBoard
                 'received_on' => optional($balance->batch->received_on)->toDateString(),
                 'expires_on' => optional($balance->batch->expires_on)->toDateString(),
             ])->values(),
-            'low' => $items->filter(fn (array $item) => $item['min_level'] > 0 && $item['on_hand'] <= $item['min_level'])->map(fn (array $item) => [
+            'low' => $items->filter(fn (array $item) => $item['stock_status'] === 'rop' || ($item['min_level'] > 0 && $item['on_hand'] <= $item['min_level']))->map(fn (array $item) => [
                 'code' => $item['code'],
                 'name_ar' => $item['name_ar'],
                 'name_en' => $item['name_en'],
                 'image_url' => $item['image_url'],
                 'on_hand' => $item['on_hand'],
                 'min_level' => $item['min_level'],
+                'stock_status' => $item['stock_status'],
             ])->values(),
             'counts' => StockCount::query()->with('lines.item', 'lines.location')->orderByDesc('id')->get()->map(fn (StockCount $count) => $this->presentCount($count))->values(),
         ];
@@ -501,6 +539,9 @@ class WarehouseBoard
             'reserved' => $reserved,
             'available' => $onHand - $reserved,
             'unit' => $item->unit->code,
+            'stock_status' => $item->stock_status,
+            'family' => $item->family,
+            'alt_unit' => $item->alt_unit,
             'category' => [
                 'id' => $item->category->id,
                 'name_ar' => $item->category->name_ar,
@@ -517,6 +558,9 @@ class WarehouseBoard
                 ->filter()
                 ->unique()
                 ->values(),
+            'recorded_locations' => $item->relationLoaded('recordedPositions')
+                ? $item->recordedPositions->map(fn (RecordedPosition $row) => $row->location?->code)->filter()->unique()->values()
+                : [],
             'batches' => $item->batches
                 ->map(function (Batch $batch) {
                     $positions = $batch->balances->where('quantity', '>', 0)->values();
@@ -603,7 +647,7 @@ class WarehouseBoard
      */
     private function itemQuery(): Builder
     {
-        return Item::query()->with(['category', 'unit', 'supplier', 'batches.balances.location'])->orderBy('code');
+        return Item::query()->with(['category', 'unit', 'supplier', 'batches.balances.location', 'recordedPositions.location'])->orderBy('code');
     }
 
     /**
@@ -629,10 +673,12 @@ class WarehouseBoard
      */
     private function orders(): array
     {
-        return PurchaseOrder::query()->with(['supplier', 'lines.item'])->orderByDesc('id')->get()->map(fn (PurchaseOrder $order) => [
+        return PurchaseOrder::query()->with(['supplier', 'lines.item'])->withCount('shipments')->orderByDesc('id')->get()->map(fn (PurchaseOrder $order) => [
             'id' => $order->id,
             'number' => $order->number,
-            'status' => $order->status,
+            'status' => $this->archivedFuture($order) ? 'historical' : $order->status,
+            'kind' => $this->archivedFuture($order) ? 'future' : ($order->kind ?: 'receipt'),
+            'notes' => $order->notes,
             'ordered_on' => optional($order->ordered_on)->toDateString(),
             'supplier' => $order->supplier->name,
             'supplier_en' => $order->supplier->name_en,
@@ -647,6 +693,13 @@ class WarehouseBoard
                 'remaining' => $line->quantity - $line->received_quantity,
             ])->values(),
         ])->all();
+    }
+
+    private function archivedFuture(PurchaseOrder $order): bool
+    {
+        return ($order->kind ?: 'receipt') === 'receipt'
+            && str_starts_with(strtoupper($order->number), 'RFQ-')
+            && (int) $order->shipments_count === 0;
     }
 
     /**

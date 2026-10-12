@@ -41,7 +41,7 @@ class CatalogController extends Controller
     {
         $data = $request->validate([
             'code' => ['required', 'string', 'max:40', Rule::unique('items', 'code')],
-            'part_number' => ['nullable', 'string', 'max:40'],
+            'part_number' => ['nullable', 'string', 'max:80'],
             'barcode' => ['nullable', 'string', 'max:40'],
             'name_ar' => ['required', 'string', 'max:120'],
             'name_en' => ['required', 'string', 'max:120'],
@@ -70,7 +70,7 @@ class CatalogController extends Controller
     {
         $data = $request->validate([
             'code' => ['required', 'string', 'max:40', Rule::unique('items', 'code')->ignore($item->id)],
-            'part_number' => ['nullable', 'string', 'max:40'],
+            'part_number' => ['nullable', 'string', 'max:80'],
             'barcode' => ['nullable', 'string', 'max:40'],
             'name_ar' => ['required', 'string', 'max:120'],
             'name_en' => ['required', 'string', 'max:120'],
@@ -118,7 +118,7 @@ class CatalogController extends Controller
     public function storeLocation(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'code' => ['required', 'string', 'max:20', Rule::unique('locations', 'code')],
+            'code' => ['required', 'string', 'max:100', Rule::unique('locations', 'code')],
             'zone' => ['required', 'string', 'max:20'],
             'rack' => ['nullable', 'string', 'max:10'],
             'shelf' => ['nullable', 'string', 'max:10'],
@@ -133,7 +133,7 @@ class CatalogController extends Controller
     public function updateLocation(Request $request, Location $location): JsonResponse
     {
         $data = $request->validate([
-            'code' => ['required', 'string', 'max:20', Rule::unique('locations', 'code')->ignore($location->id)],
+            'code' => ['required', 'string', 'max:100', Rule::unique('locations', 'code')->ignore($location->id)],
             'zone' => ['required', 'string', 'max:20'],
             'rack' => ['nullable', 'string', 'max:10'],
             'shelf' => ['nullable', 'string', 'max:10'],
@@ -151,6 +151,7 @@ class CatalogController extends Controller
     {
         $this->refuseIfUsed(
             $location->balances()->exists()
+            || $location->recordedPositions()->exists()
             || CountLine::query()->where('location_id', $location->id)->exists()
             || Movement::query()->where(function ($query) use ($location) {
                 $query->where('from_location_id', $location->id)

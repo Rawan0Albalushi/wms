@@ -125,7 +125,7 @@ export default function Receiving() {
                         <Field label={t('order')}>
                             <select name="purchase_order_id" value={orderId} onChange={(event) => chooseOrder(event.target.value)}>
                                 <option value="" />
-                                {(buying.data?.orders || []).filter((row) => row.status !== 'received').map((row) => (
+                                {(buying.data?.orders || []).filter((row) => row.status !== 'received' && row.kind !== 'future').map((row) => (
                                     <option key={row.id} value={row.id}>{row.number}</option>
                                 ))}
                             </select>

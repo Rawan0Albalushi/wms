@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { api, errorText, formatQty, label, ping, readForm, syncImage } from '../api';
+import { api, errorText, formatQty, label, matchesText, ping, readForm, syncImage } from '../api';
 import { useAuth } from '../auth';
 import { Editor, Field, Load, PageHead, Pager, PhotoField, RowActions, SheetBar, useData, usePaged, Who } from '../components/ui';
 import { useLocale } from '../i18n';
@@ -12,13 +12,27 @@ export default function Items() {
     const [params] = useSearchParams();
     const [q, setQ] = useState('');
     const [query, setQuery] = useState('');
+    const [status, setStatus] = useState('');
+    const [unit, setUnit] = useState('');
+    const [family, setFamily] = useState('');
+    const [place, setPlace] = useState('');
     const [open, setOpen] = useState(params.get('new') === '1' && manage);
     const [editing, setEditing] = useState(null);
     const [notice, setNotice] = useState('');
     const created = useRef(null);
     const { data, loading, error, reload } = useData(`/items?q=${encodeURIComponent(query)}`);
     const options = useData('/options');
-    const page = usePaged(data || [], query);
+    const families = [...new Set((data || []).map((item) => item.family).filter(Boolean))].sort();
+    const units = [...new Set((data || []).map((item) => item.unit).filter(Boolean))].sort();
+    const filtered = (data || []).filter((item) => {
+        const places = [...(item.locations || []), ...(item.recorded_locations || [])];
+
+        return (!status || item.stock_status === status)
+            && (!unit || item.unit === unit)
+            && (!family || item.family === family)
+            && matchesText(place, places);
+    });
+    const page = usePaged(filtered, `${query}|${status}|${unit}|${family}|${place}`);
 
     useEffect(() => {
         const timer = setTimeout(() => setQuery(q), 200);
@@ -47,8 +61,22 @@ export default function Items() {
             />
             {notice ? <p className="banner" role="alert">{notice}</p> : null}
             <div className="sheet">
-                <SheetBar count={data ? data.length : undefined}>
+                <SheetBar count={data ? filtered.length : undefined}>
                     <input className="search" value={q} onChange={(event) => setQ(event.target.value)} placeholder={t('search')} aria-label={t('search')} />
+                    <select className="filter" value={status} onChange={(event) => setStatus(event.target.value)} aria-label={t('filter.status')}>
+                        <option value="">{t('filter.status')}</option>
+                        <option value="rop">{t('stock.rop')}</option>
+                        <option value="sufficient">{t('stock.sufficient')}</option>
+                    </select>
+                    <select className="filter" value={unit} onChange={(event) => setUnit(event.target.value)} aria-label={t('filter.unit')}>
+                        <option value="">{t('filter.unit')}</option>
+                        {units.map((code) => <option key={code} value={code}>{code}</option>)}
+                    </select>
+                    <select className="filter" value={family} onChange={(event) => setFamily(event.target.value)} aria-label={t('filter.family')}>
+                        <option value="">{t('filter.family')}</option>
+                        {families.map((name) => <option key={name} value={name}>{name}</option>)}
+                    </select>
+                    <input className="search filter" value={place} onChange={(event) => setPlace(event.target.value)} placeholder={t('filter.location')} aria-label={t('filter.location')} />
                 </SheetBar>
                 <Load loading={loading} error={error}>
                     <div className="table-wrap">
@@ -60,6 +88,7 @@ export default function Items() {
                                     <th className="num" scope="col">{t('on_hand')}</th>
                                     <th className="num" scope="col">{t('available')}</th>
                                     <th className="num" scope="col">{t('min')}</th>
+                                    <th scope="col">{t('filter.status')}</th>
                                     <th scope="col">{t('location')}</th>
                                     <th scope="col">{t('actions')}</th>
                                 </tr>
@@ -68,11 +97,12 @@ export default function Items() {
                                 {page.rows.map((item) => (
                                     <tr key={item.id}>
                                         <td><Who code={item.code} name={label(item, locale)} to={`/items/${item.id}`} image={item.image_url} /></td>
-                                        <td className="mono">{item.part_number || '—'}</td>
+                                        <td className="mono">{item.part_number || '—'}{item.family ? <span className="cell-note">{item.family}</span> : null}</td>
                                         <td className="num">{formatQty(item.on_hand)}</td>
                                         <td className="num">{formatQty(item.available)}</td>
                                         <td className="num">{formatQty(item.min_level)}</td>
-                                        <td className="mono">{item.locations.join(' / ') || '—'}</td>
+                                        <td>{item.stock_status ? t(`stock.${item.stock_status}`) : '—'}</td>
+                                        <td className="mono">{[...new Set([...(item.locations || []), ...(item.recorded_locations || [])])].join(' / ') || '—'}</td>
                                         <td>
                                             <RowActions
                                                 to={`/items/${item.id}`}
@@ -84,7 +114,7 @@ export default function Items() {
                                 ))}
                             </tbody>
                         </table>
-                        {data?.length === 0 ? <p className="empty">{t('empty')}</p> : null}
+                        {data && filtered.length === 0 ? <p className="empty">{t('empty')}</p> : null}
                     </div>
                     <Pager page={page.page} pages={page.pages} total={page.total} from={page.from} to={page.to} onPage={page.setPage} />
                 </Load>

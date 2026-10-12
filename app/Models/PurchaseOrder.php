@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['number', 'supplier_id', 'purchase_request_id', 'status', 'ordered_on', 'notes'])]
+#[Fillable(['number', 'supplier_id', 'purchase_request_id', 'status', 'kind', 'ordered_on', 'notes'])]
 class PurchaseOrder extends Model
 {
     public function supplier(): BelongsTo

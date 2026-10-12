@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { formatDate, formatQty, label } from '../api';
+import { formatDate, formatQty, label, matchesText } from '../api';
 import { useAuth } from '../auth';
 import Rack from '../components/Rack';
 import { Condition, Load, PageHead, Pager, PlaceBanner, SheetBar, useData, usePaged, Who } from '../components/ui';
@@ -10,9 +10,12 @@ export default function Inventory() {
     const { t, locale } = useLocale();
     const { can } = useAuth();
     const [active, setActive] = useState('');
+    const [q, setQ] = useState('');
     const { data, loading, error } = useData('/inventory');
-    const positions = (data?.positions || []).filter((row) => !active || row.location === active);
-    const page = usePaged(positions, active);
+    const positions = (data?.positions || []).filter((row) => (!active || row.location === active) && matchesText(q, [row.item_code, row.name_ar, row.name_en, row.location, row.batch_no, row.condition]));
+    const recorded = (data?.recorded || []).filter((row) => (!active || row.location === active) && matchesText(q, [row.item_code, row.name_ar, row.name_en, row.location, row.line_type, row.reference]));
+    const page = usePaged(positions, `${active}|${q}`);
+    const recordedPage = usePaged(recorded, `recorded|${active}|${q}`);
     const place = (data?.locations || []).find((row) => row.code === active);
 
     return (
@@ -27,6 +30,7 @@ export default function Inventory() {
                         </div>
                         <div className="sheet">
                             <SheetBar title={active || t('batch')} count={page.total}>
+                                <input className="search" value={q} onChange={(event) => setQ(event.target.value)} placeholder={t('search')} aria-label={t('search')} />
                                 {active ? <button type="button" className="btn ghost small" onClick={() => setActive('')}>{t('show_all')}</button> : null}
                             </SheetBar>
                             <PlaceBanner place={place} />
@@ -66,6 +70,37 @@ export default function Inventory() {
                                 {positions.length === 0 ? <p className="empty">{t('empty')}</p> : null}
                             </div>
                             <Pager page={page.page} pages={page.pages} total={page.total} from={page.from} to={page.to} onPage={page.setPage} />
+                        </div>
+                        <div className="sheet">
+                            <SheetBar title={t('recorded.title')} count={recordedPage.total} />
+                            <div className="table-wrap">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th scope="col">{t('item')}</th>
+                                            <th scope="col">{t('location')}</th>
+                                            <th className="num" scope="col">{t('qty')}</th>
+                                            <th scope="col">{t('filter.family')}</th>
+                                            <th scope="col">{t('reference')}</th>
+                                            <th scope="col">{t('date')}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {recordedPage.rows.map((row) => (
+                                            <tr key={row.id}>
+                                                <td><Who code={row.item_code} name={label(row, locale)} to={`/items/${row.item_id}`} /></td>
+                                                <td className="mono">{row.location || '—'}</td>
+                                                <td className="num">{formatQty(row.quantity)}</td>
+                                                <td>{row.line_type || '—'}</td>
+                                                <td>{row.reference || '—'}</td>
+                                                <td className="mono">{formatDate(row.recorded_on)}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                                {recorded.length === 0 ? <p className="empty">{t('empty')}</p> : null}
+                            </div>
+                            <Pager page={recordedPage.page} pages={recordedPage.pages} total={recordedPage.total} from={recordedPage.from} to={recordedPage.to} onPage={recordedPage.setPage} />
                         </div>
                     </div>
                 ) : null}

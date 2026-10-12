@@ -45,7 +45,7 @@ function Board({ data, locale, t }) {
     const conditions = byCondition(items);
     const valued = topValue(items, locale);
     const low = items
-        .filter((item) => item.min_level > 0 && item.on_hand <= item.min_level)
+        .filter((item) => item.stock_status === 'rop' || (item.min_level > 0 && item.on_hand <= item.min_level))
         .sort((a, b) => (a.on_hand - a.min_level) - (b.on_hand - b.min_level));
     const shortages = (data.shortages || []).filter((row) => row.shortage > 0);
     const shipments = [...(data.shipments || [])]

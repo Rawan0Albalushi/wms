@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { formatDate, formatQty, label } from '../api';
+import { formatDate, formatQty, label, matchesText } from '../api';
 import { Condition, Load, PageHead, Pager, Status, useData, usePaged, Who } from '../components/ui';
 import { useLocale } from '../i18n';
 
@@ -11,6 +11,7 @@ export default function Reports() {
     const [params] = useSearchParams();
     const initial = tabs.includes(params.get('tab')) ? params.get('tab') : 'current';
     const [tab, setTab] = useState(initial);
+    const [q, setQ] = useState('');
     const { data, loading, error } = useData('/reports');
 
     return (
@@ -25,18 +26,25 @@ export default function Reports() {
                     ))}
                 </div>
                 <p className="sheet-note">{t(`report.${tab}.hint`)}</p>
+                <div className="sheet-h">
+                    <div className="sheet-tools">
+                        <input className="search" value={q} onChange={(event) => setQ(event.target.value)} placeholder={t('search')} aria-label={t('search')} />
+                    </div>
+                </div>
                 <Load loading={loading} error={error}>
-                    {data ? <Report tab={tab} data={data} locale={locale} t={t} /> : null}
+                    {data ? <Report tab={tab} data={data} locale={locale} t={t} query={q} /> : null}
                 </Load>
             </div>
         </>
     );
 }
 
-function Report({ tab, data, locale, t }) {
+function Report({ tab, data, locale, t, query }) {
+    const keep = (row) => matchesText(query, [row.code, row.part_number, row.item, row.name_ar, row.name_en, row.location, row.batch, row.reference, row.reason, row.item_code]);
+
     if (tab === 'current') {
         return (
-            <PagedTable rows={data.current} resetKey={tab} heads={[t('item'), t('part'), t('on_hand'), t('available'), t('value')]} numeric={[2, 3, 4]} render={(row) => (
+            <PagedTable rows={data.current.filter(keep)} resetKey={`${tab}|${query}`} heads={[t('item'), t('part'), t('on_hand'), t('available'), t('value')]} numeric={[2, 3, 4]} render={(row) => (
                 <tr key={row.code}>
                     <td><Who code={row.code} name={label(row, locale)} image={row.image_url} /></td>
                     <td className="mono">{row.part_number || '—'}</td>
@@ -50,7 +58,7 @@ function Report({ tab, data, locale, t }) {
 
     if (tab === 'by_location') {
         return (
-            <PagedTable rows={data.by_location} resetKey={tab} heads={[t('location'), t('item'), t('batch'), t('qty'), t('condition')]} numeric={[3]} render={(row) => (
+            <PagedTable rows={data.by_location.filter(keep)} resetKey={`${tab}|${query}`} heads={[t('location'), t('item'), t('batch'), t('qty'), t('condition')]} numeric={[3]} render={(row) => (
                 <tr key={`${row.location || 'none'}-${row.batch}`}>
                     <td className="mono">{row.location || '—'}</td>
                     <td><Who code={row.item} name={label(row, locale)} image={row.image_url} /></td>
@@ -66,7 +74,7 @@ function Report({ tab, data, locale, t }) {
         const rows = tab === 'used' ? data.used : data.movements;
 
         return (
-            <PagedTable rows={rows} resetKey={tab} heads={[t('date'), t('item'), t('batch'), t('from'), t('to'), t('qty'), t('reason'), t('employee')]} numeric={[5]} render={(row) => (
+            <PagedTable rows={rows.filter(keep)} resetKey={`${tab}|${query}`} heads={[t('date'), t('item'), t('batch'), t('from'), t('to'), t('qty'), t('reason'), t('employee')]} numeric={[5]} render={(row) => (
                 <tr key={row.id}>
                     <td className="mono">{formatDate(row.happened_at)}</td>
                     <td><Who code={row.item} name={label(row, locale)} image={row.image_url} /></td>
@@ -83,7 +91,7 @@ function Report({ tab, data, locale, t }) {
 
     if (tab === 'batches') {
         return (
-            <PagedTable rows={data.batches} resetKey={tab} heads={[t('batch'), t('item'), t('location'), t('on_hand'), t('remaining'), t('condition'), t('received_on')]} numeric={[3, 4]} render={(row) => (
+            <PagedTable rows={data.batches.filter(keep)} resetKey={`${tab}|${query}`} heads={[t('batch'), t('item'), t('location'), t('on_hand'), t('remaining'), t('condition'), t('received_on')]} numeric={[3, 4]} render={(row) => (
                 <tr key={row.id}>
                     <td className="mono">{row.batch}</td>
                     <td><Who code={row.item} name={label(row, locale)} image={row.image_url} /></td>
@@ -99,7 +107,7 @@ function Report({ tab, data, locale, t }) {
 
     if (tab === 'low') {
         return (
-            <PagedTable rows={data.low} resetKey={tab} heads={[t('item'), t('on_hand'), t('min')]} numeric={[1, 2]} render={(row) => (
+            <PagedTable rows={data.low.filter(keep)} resetKey={`${tab}|${query}`} heads={[t('item'), t('on_hand'), t('min')]} numeric={[1, 2]} render={(row) => (
                 <tr key={row.code}>
                     <td><Who code={row.code} name={label(row, locale)} image={row.image_url} /></td>
                     <td className="num">{formatQty(row.on_hand)}</td>

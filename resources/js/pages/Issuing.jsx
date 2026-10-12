@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { api, formatDate, formatQty, label, ping, readForm } from '../api';
+import { api, formatDate, formatQty, label, matchesText, ping, readForm } from '../api';
 import { Editor, Field, Load, PageHead, Pager, SheetBar, StockSelect, useData, usePaged, Who } from '../components/ui';
 import { useLocale } from '../i18n';
 
@@ -8,10 +8,11 @@ export default function Issuing() {
     const { t, locale } = useLocale();
     const [params] = useSearchParams();
     const [open, setOpen] = useState(params.get('new') === '1');
+    const [q, setQ] = useState('');
     const options = useData('/options');
     const stock = useData('/inventory');
-    const rows = (stock.data?.movements || []).filter((row) => row.type === 'out' || row.type === 'consume');
-    const page = usePaged(rows, rows.length);
+    const rows = (stock.data?.movements || []).filter((row) => (row.type === 'out' || row.type === 'consume') && matchesText(q, [row.item, row.name_ar, row.name_en, row.reference, row.reason, row.batch]));
+    const page = usePaged(rows, q);
 
     return (
         <>
@@ -23,7 +24,9 @@ export default function Issuing() {
             />
             <Load loading={options.loading || stock.loading} error={options.error || stock.error}>
                 <div className="sheet">
-                    <SheetBar title={t('list.issues')} count={rows.length} />
+                    <SheetBar title={t('list.issues')} count={rows.length}>
+                        <input className="search" value={q} onChange={(event) => setQ(event.target.value)} placeholder={t('search')} aria-label={t('search')} />
+                    </SheetBar>
                     <div className="table-wrap">
                         <table>
                             <thead>

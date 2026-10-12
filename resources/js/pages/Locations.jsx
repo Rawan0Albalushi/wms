@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { api, errorText, formatQty, ping, readForm, syncImage } from '../api';
+import { api, errorText, formatQty, matchesText, ping, readForm, syncImage } from '../api';
 import { useAuth } from '../auth';
 import Rack from '../components/Rack';
 import { Editor, Field, Load, PageHead, Pager, Panel, PhotoField, PlaceBanner, RecordView, RowActions, SheetBar, Thumb, useData, usePaged } from '../components/ui';
@@ -16,12 +16,13 @@ export default function Locations() {
     const [viewing, setViewing] = useState(null);
     const [notice, setNotice] = useState('');
     const [active, setActive] = useState('');
+    const [q, setQ] = useState('');
     const [photo, setPhoto] = useState(null);
     const created = useRef(null);
     const { data, loading, error, reload } = useData('/locations');
     const rows = (data || []).filter((location) => !active || location.code === active);
-    const listed = rows.filter((row) => active || row.on_hand > 0 || row.kind !== 'storage');
-    const page = usePaged(listed, active);
+    const listed = rows.filter((row) => matchesText(q, [row.code, row.zone, row.rack, row.shelf]) && (active || row.on_hand > 0 || row.recorded_lines > 0 || row.kind !== 'storage'));
+    const page = usePaged(listed, `${active}|${q}`);
     const activeRow = (data || []).find((location) => location.code === active);
     const bays = (data || []).filter((location) => location.kind !== 'storage');
 
@@ -64,6 +65,7 @@ export default function Locations() {
             </div>
             <div className="sheet">
                 <SheetBar title={t('location_list')} count={data ? listed.length : undefined}>
+                    <input className="search" value={q} onChange={(event) => setQ(event.target.value)} placeholder={t('search')} aria-label={t('search')} />
                     {active ? <button type="button" className="btn ghost small" onClick={() => setActive('')}>{t('show_all')}</button> : null}
                 </SheetBar>
                 <PlaceBanner place={activeRow} onPhoto={manage ? setPhoto : undefined} />
