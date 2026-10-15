@@ -1515,7 +1515,36 @@ td input[type='number'] {
     font-weight: 600;
 }
 
-.rack { display: grid; gap: 6px; padding: 16px; overflow-x: auto; }
+.store-tabs { margin: 0 16px; }
+
+.store-tabs button {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 6px;
+}
+
+.store-tabs button small { color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.store-tabs button.on small { color: var(--green); }
+
+.rack { display: grid; gap: 8px; padding: 16px; overflow-x: auto; }
+
+.rack-line {
+    display: grid;
+    gap: 6px;
+    align-items: center;
+}
+
+.rack-head { position: sticky; top: 0; z-index: 2; background: white; }
+
+.rack-line > .rack-idx:first-child {
+    position: sticky;
+    inset-inline-start: 0;
+    z-index: 1;
+    background: white;
+}
+
+.rack-line .cell { width: auto; }
 
 .rack-row, .rack-cols {
     display: grid;
@@ -1526,8 +1555,9 @@ td input[type='number'] {
 
 .rack-idx, .rack-cols span {
     font-family: var(--mono);
-    font-size: 12px;
-    color: var(--muted);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ink);
     text-align: center;
 }
 
@@ -1592,15 +1622,34 @@ td input[type='number'] {
 
 .rack-key i[data-state='empty'] { background: #fff1f4; border-color: #f3c3cf; }
 
-.bin-history {
+.bin-history,
+.bin-stock {
     display: grid;
     gap: 8px;
     padding: 0 16px 16px;
 }
 
-.bin-history h3 { margin: 0; font-size: 14px; font-weight: 600; }
+.file-places { display: grid; gap: 8px; padding: 0 16px 8px; }
 
-.bin-history .empty { padding: 8px 0 4px; }
+.file-places h3 { margin: 0; font-size: 14px; font-weight: 600; }
+
+.file-bins { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.file-bins .cell { width: 11rem; }
+
+.file-bins .cell b,
+.rack-line .cell b {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.bin-history h3,
+.bin-stock h3 { margin: 0; font-size: 14px; font-weight: 600; }
+
+.bin-history .empty,
+.bin-stock .empty { padding: 8px 0 4px; }
 
 .bays { display: flex; gap: 8px; padding: 0 16px 16px; flex-wrap: wrap; }
 

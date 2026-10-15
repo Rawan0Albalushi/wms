@@ -189,6 +189,35 @@ class WarehouseBoard
     }
 
     /**
+     * Items currently stored in one location. Batches of the same item are combined.
+     *
+     * @return array<int, array<string, mixed>>
+     */
+    public function locationStock(Location $location): array
+    {
+        return Balance::query()
+            ->with('batch.item:id,code,name_ar,name_en')
+            ->where('location_id', $location->id)
+            ->where('quantity', '>', 0)
+            ->get()
+            ->groupBy(fn (Balance $balance) => $balance->batch->item_id)
+            ->map(function (Collection $balances): array {
+                $item = $balances->first()->batch->item;
+
+                return [
+                    'item_id' => $item->id,
+                    'item_code' => $item->code,
+                    'name_ar' => $item->name_ar,
+                    'name_en' => $item->name_en,
+                    'quantity' => (int) $balances->sum('quantity'),
+                ];
+            })
+            ->sortBy('item_code')
+            ->values()
+            ->all();
+    }
+
+    /**
      * @return array<string, mixed>
      */
     public function options(): array

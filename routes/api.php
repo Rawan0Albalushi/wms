@@ -38,6 +38,7 @@ Route::middleware('auth')->group(function () {
 
         Route::get('/locations', [CatalogController::class, 'locations'])->middleware('can:locations.view');
         Route::get('/locations/{location}/history', [CatalogController::class, 'locationHistory'])->middleware('allow:locations.view,inventory.view,receiving.post,issuing.post,transfers.post');
+        Route::get('/locations/{location}/stock', [CatalogController::class, 'locationStock'])->middleware('allow:locations.view,inventory.view,receiving.post,issuing.post,transfers.post');
         Route::post('/locations', [CatalogController::class, 'storeLocation'])->middleware('can:locations.manage');
         Route::patch('/locations/{location}', [CatalogController::class, 'updateLocation'])->middleware('can:locations.manage');
         Route::delete('/locations/{location}', [CatalogController::class, 'destroyLocation'])->middleware('can:locations.manage');

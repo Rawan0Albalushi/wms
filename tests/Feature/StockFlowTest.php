@@ -261,6 +261,50 @@ class StockFlowTest extends TestCase
         $this->assertSame('S1F2', $history[0]['to']);
     }
 
+    public function test_stocked_bin_lists_every_item_on_hand(): void
+    {
+        $this->seed(WarehouseSeeder::class);
+        $this->act();
+
+        $first = Item::query()->where('code', '268625')->firstOrFail();
+        $second = Item::query()->where('code', '!=', '268625')->orderBy('code')->firstOrFail();
+        $bin = Location::query()->where('code', 'S1F1')->firstOrFail();
+        $empty = Location::query()->where('code', 'S1F2')->firstOrFail();
+
+        $this->postJson('/api/receipts', [
+            'item_id' => $first->id,
+            'location_id' => $bin->id,
+            'batch_no' => 'B950',
+            'quantity' => 4,
+            'condition' => 'new',
+        ])->assertCreated();
+
+        $this->postJson('/api/receipts', [
+            'item_id' => $first->id,
+            'location_id' => $bin->id,
+            'batch_no' => 'B952',
+            'quantity' => 3,
+            'condition' => 'new',
+        ])->assertCreated();
+
+        $this->postJson('/api/receipts', [
+            'item_id' => $second->id,
+            'location_id' => $bin->id,
+            'batch_no' => 'B951',
+            'quantity' => 2,
+            'condition' => 'new',
+        ])->assertCreated();
+
+        $stock = collect($this->getJson('/api/locations/'.$bin->id.'/stock')->assertOk()->json());
+
+        $codes = collect([$first->code, $second->code])->sort()->values()->all();
+
+        $this->assertSame($codes, $stock->pluck('item_code')->sort()->values()->all());
+        $this->assertSame(7, $stock->firstWhere('item_code', $first->code)['quantity']);
+        $this->assertSame(2, $stock->firstWhere('item_code', $second->code)['quantity']);
+        $this->assertSame([], $this->getJson('/api/locations/'.$empty->id.'/stock')->assertOk()->json());
+    }
+
     public function test_home_queue_points_at_the_next_warehouse_step(): void
     {
         $this->seed(WarehouseSeeder::class);
