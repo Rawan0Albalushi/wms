@@ -4,17 +4,22 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Alert;
-use App\Services\StockLedger;
 use App\Services\WarehouseBoard;
 use Illuminate\Validation\ValidationException;
 
 class AlertController extends Controller
 {
-    public function index(WarehouseBoard $board, StockLedger $ledger): array
+    public function index(WarehouseBoard $board): array
     {
-        $ledger->syncAlerts();
-
         return $board->alerts();
+    }
+
+    /**
+     * @return array{count: int}
+     */
+    public function count(): array
+    {
+        return ['count' => Alert::query()->count()];
     }
 
     public function resolve(Alert $alert): never

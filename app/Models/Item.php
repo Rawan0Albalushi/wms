@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 
 #[Fillable(['code', 'part_number', 'barcode', 'image_path', 'name_ar', 'name_en', 'category_id', 'unit_id', 'supplier_id', 'min_level', 'unit_cost', 'stock_status', 'family', 'alt_unit'])]
 class Item extends Model
@@ -28,6 +29,11 @@ class Item extends Model
     public function batches(): HasMany
     {
         return $this->hasMany(Batch::class);
+    }
+
+    public function balances(): HasManyThrough
+    {
+        return $this->hasManyThrough(Balance::class, Batch::class);
     }
 
     public function recordedPositions(): HasMany

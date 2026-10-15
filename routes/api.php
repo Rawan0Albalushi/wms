@@ -66,6 +66,7 @@ Route::middleware('auth')->group(function () {
         Route::patch('/counts/{count}', [CountController::class, 'update'])->middleware('can:counts.manage');
         Route::post('/counts/{count}/approve', [CountController::class, 'approve'])->middleware('can:counts.approve');
 
+        Route::get('/alerts/count', [AlertController::class, 'count'])->middleware('can:alerts.view');
         Route::get('/alerts', [AlertController::class, 'index'])->middleware('can:alerts.view');
         Route::post('/alerts/{alert}/resolve', [AlertController::class, 'resolve'])->middleware('can:alerts.view');
 

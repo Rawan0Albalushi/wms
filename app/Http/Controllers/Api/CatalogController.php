@@ -24,7 +24,7 @@ class CatalogController extends Controller
 {
     public function items(Request $request, WarehouseBoard $board): array
     {
-        return $board->items($request->string('q')->toString());
+        return $board->items($request);
     }
 
     public function locations(WarehouseBoard $board): array
@@ -42,9 +42,9 @@ class CatalogController extends Controller
         return $board->locationStock($location);
     }
 
-    public function options(WarehouseBoard $board): array
+    public function options(Request $request, WarehouseBoard $board): array
     {
-        return $board->options();
+        return $board->options($request->string('scope')->toString());
     }
 
     public function storeItem(Request $request, StockLedger $ledger): JsonResponse

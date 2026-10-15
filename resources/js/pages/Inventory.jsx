@@ -11,7 +11,7 @@ export default function Inventory() {
     const { can } = useAuth();
     const [active, setActive] = useState('');
     const [q, setQ] = useState('');
-    const { data, loading, error } = useData('/inventory');
+    const { data, loading, error } = useData('/inventory?moves=0');
     const positions = (data?.positions || []).filter((row) => (!active || row.location === active) && matchesText(q, [row.item_code, row.name_ar, row.name_en, row.location, row.batch_no, row.condition]));
     const recorded = (data?.recorded || []).filter((row) => (!active || row.location === active) && matchesText(q, [row.item_code, row.name_ar, row.name_en, row.location, row.line_type, row.reference]));
     const page = usePaged(positions, `${active}|${q}`);

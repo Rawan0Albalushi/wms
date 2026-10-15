@@ -12,9 +12,9 @@ use Illuminate\Validation\Rule;
 
 class StockController extends Controller
 {
-    public function inventory(WarehouseBoard $board): array
+    public function inventory(Request $request, WarehouseBoard $board): array
     {
-        return $board->inventory();
+        return $board->inventory($request->boolean('moves', true));
     }
 
     public function receive(Request $request, StockLedger $ledger): JsonResponse

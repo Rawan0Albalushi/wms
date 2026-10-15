@@ -305,6 +305,40 @@ class StockFlowTest extends TestCase
         $this->assertSame([], $this->getJson('/api/locations/'.$empty->id.'/stock')->assertOk()->json());
     }
 
+    public function test_item_search_names_the_locations_holding_it(): void
+    {
+        $this->seed(WarehouseSeeder::class);
+        $this->act();
+
+        $item = Item::query()->where('code', '268625')->firstOrFail();
+        $bin = Location::query()->where('code', 'S1F1')->firstOrFail();
+
+        $this->postJson('/api/receipts', [
+            'item_id' => $item->id,
+            'location_id' => $bin->id,
+            'batch_no' => 'B950',
+            'quantity' => 4,
+            'condition' => 'new',
+        ])->assertCreated();
+
+        RecordedPosition::query()->create([
+            'item_id' => $item->id,
+            'location_id' => Location::query()->where('code', 'S1F2')->value('id'),
+            'quantity' => 2,
+            'condition' => 'new',
+            'recorded_on' => '2026-09-01',
+            'import_key' => 'test-find-s1f2',
+        ]);
+
+        $response = $this->getJson('/api/items?q=268625')->assertOk();
+        $match = collect($response->json('data'))->firstWhere('code', '268625');
+
+        $this->assertSame(1, $response->json('page'));
+        $this->assertArrayNotHasKey('batches', $match);
+        $this->assertContains('S1F1', $match['locations']);
+        $this->assertContains('S1F2', $match['recorded_locations']);
+    }
+
     public function test_home_queue_points_at_the_next_warehouse_step(): void
     {
         $this->seed(WarehouseSeeder::class);

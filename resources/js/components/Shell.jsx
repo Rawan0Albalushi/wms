@@ -23,10 +23,10 @@ export default function Shell({ children }) {
 
         let live = true;
         const load = () => {
-            api('/alerts')
-                .then((rows) => {
+            api('/alerts/count')
+                .then((row) => {
                     if (live) {
-                        setAlerts(rows.length);
+                        setAlerts(Number(row.count) || 0);
                     }
                 })
                 .catch(() => {});

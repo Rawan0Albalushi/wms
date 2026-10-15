@@ -38,15 +38,20 @@ export default function Floor() {
 function Board({ data, locale, t }) {
     const { can } = useAuth();
     const stats = data.stats || {};
-    const items = data.items || [];
     const tasks = data.tasks || [];
     const trend = data.trend || [];
-    const categories = byCategory(items, locale);
-    const conditions = byCondition(items);
-    const valued = topValue(items, locale);
-    const low = items
-        .filter((item) => item.stock_status === 'rop' || (item.min_level > 0 && item.on_hand <= item.min_level))
-        .sort((a, b) => (a.on_hand - a.min_level) - (b.on_hand - b.min_level));
+    const categories = (data.categories || []).map((row) => ({
+        key: row.id,
+        label: label(row, locale) || '—',
+        value: Number(row.value) || 0,
+    }));
+    const conditions = data.conditions || [];
+    const valued = (data.top_value || []).map((item) => ({
+        key: item.id,
+        label: `${item.code} ${label(item, locale)}`.trim(),
+        value: Number(item.value) || 0,
+    }));
+    const low = data.low || [];
     const shortages = (data.shortages || []).filter((row) => row.shortage > 0);
     const shipments = [...(data.shipments || [])]
         .filter((row) => row.status !== 'received')
@@ -392,43 +397,3 @@ function tally(rows, field, order) {
     return [...counts.entries()].map(([key, value]) => ({ key, value }));
 }
 
-function byCategory(items, locale) {
-    const groups = new Map();
-
-    items.forEach((item) => {
-        const key = item.category?.id ?? 'none';
-        const current = groups.get(key) || { key, label: label(item.category, locale) || '—', value: 0 };
-        current.value += Number(item.on_hand) || 0;
-        groups.set(key, current);
-    });
-
-    return [...groups.values()].sort((a, b) => b.value - a.value);
-}
-
-function byCondition(items) {
-    const counts = { new: 0, used: 0, damaged: 0 };
-
-    items.forEach((item) => {
-        (item.batches || []).forEach((batch) => {
-            if (counts[batch.condition] === undefined) {
-                return;
-            }
-
-            counts[batch.condition] += Number(batch.quantity) || 0;
-        });
-    });
-
-    return Object.entries(counts).map(([key, value]) => ({ key, value }));
-}
-
-function topValue(items, locale) {
-    return items
-        .map((item) => ({
-            key: item.id,
-            label: `${item.code} ${label(item, locale)}`.trim(),
-            value: (Number(item.on_hand) || 0) * (Number(item.unit_cost) || 0),
-        }))
-        .filter((row) => row.value > 0)
-        .sort((a, b) => b.value - a.value)
-        .slice(0, 5);
-}

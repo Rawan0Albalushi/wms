@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { api, errorText, formatQty, label, matchesText, ping, readForm, syncImage } from '../api';
+import { api, errorText, formatQty, label, ping, readForm, syncImage } from '../api';
 import { useAuth } from '../auth';
-import { Editor, Field, Load, PageHead, Pager, PhotoField, RowActions, SheetBar, useData, usePaged, Who } from '../components/ui';
+import { Editor, Field, Load, PageHead, Pager, PhotoField, RowActions, SheetBar, useData, Who } from '../components/ui';
 import { useLocale } from '../i18n';
 
 export default function Items() {
@@ -16,29 +16,36 @@ export default function Items() {
     const [unit, setUnit] = useState('');
     const [family, setFamily] = useState('');
     const [place, setPlace] = useState('');
+    const [placeQuery, setPlaceQuery] = useState('');
+    const [page, setPage] = useState(1);
     const [open, setOpen] = useState(params.get('new') === '1' && manage);
     const [editing, setEditing] = useState(null);
     const [notice, setNotice] = useState('');
     const created = useRef(null);
-    const { data, loading, error, reload } = useData(`/items?q=${encodeURIComponent(query)}`);
-    const options = useData('/options');
-    const families = [...new Set((data || []).map((item) => item.family).filter(Boolean))].sort();
-    const units = [...new Set((data || []).map((item) => item.unit).filter(Boolean))].sort();
-    const filtered = (data || []).filter((item) => {
-        const places = [...(item.locations || []), ...(item.recorded_locations || [])];
-
-        return (!status || item.stock_status === status)
-            && (!unit || item.unit === unit)
-            && (!family || item.family === family)
-            && matchesText(place, places);
-    });
-    const page = usePaged(filtered, `${query}|${status}|${unit}|${family}|${place}`);
+    const filters = new URLSearchParams({ q: query, page: String(page), status, unit, family, place: placeQuery });
+    const { data, loading, error, reload } = useData(`/items?${filters.toString()}`);
+    const options = useData('/options?scope=catalog');
+    const rows = data?.data || [];
+    const families = data?.families || [];
+    const units = data?.units || [];
 
     useEffect(() => {
-        const timer = setTimeout(() => setQuery(q), 200);
+        const timer = setTimeout(() => {
+            setQuery(q);
+            setPage(1);
+        }, 200);
 
         return () => clearTimeout(timer);
     }, [q]);
+
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setPlaceQuery(place);
+            setPage(1);
+        }, 200);
+
+        return () => clearTimeout(timer);
+    }, [place]);
 
     async function removeItem(id) {
         try {
@@ -61,18 +68,18 @@ export default function Items() {
             />
             {notice ? <p className="banner" role="alert">{notice}</p> : null}
             <div className="sheet">
-                <SheetBar count={data ? filtered.length : undefined}>
+                <SheetBar count={data ? data.total : undefined}>
                     <input className="search" value={q} onChange={(event) => setQ(event.target.value)} placeholder={t('search')} aria-label={t('search')} />
-                    <select className="filter" value={status} onChange={(event) => setStatus(event.target.value)} aria-label={t('filter.status')}>
+                    <select className="filter" value={status} onChange={(event) => { setStatus(event.target.value); setPage(1); }} aria-label={t('filter.status')}>
                         <option value="">{t('filter.status')}</option>
                         <option value="rop">{t('stock.rop')}</option>
                         <option value="sufficient">{t('stock.sufficient')}</option>
                     </select>
-                    <select className="filter" value={unit} onChange={(event) => setUnit(event.target.value)} aria-label={t('filter.unit')}>
+                    <select className="filter" value={unit} onChange={(event) => { setUnit(event.target.value); setPage(1); }} aria-label={t('filter.unit')}>
                         <option value="">{t('filter.unit')}</option>
                         {units.map((code) => <option key={code} value={code}>{code}</option>)}
                     </select>
-                    <select className="filter" value={family} onChange={(event) => setFamily(event.target.value)} aria-label={t('filter.family')}>
+                    <select className="filter" value={family} onChange={(event) => { setFamily(event.target.value); setPage(1); }} aria-label={t('filter.family')}>
                         <option value="">{t('filter.family')}</option>
                         {families.map((name) => <option key={name} value={name}>{name}</option>)}
                     </select>
@@ -94,7 +101,7 @@ export default function Items() {
                                 </tr>
                             </thead>
                             <tbody>
-                                {page.rows.map((item) => (
+                                {rows.map((item) => (
                                     <tr key={item.id}>
                                         <td><Who code={item.code} name={label(item, locale)} to={`/items/${item.id}`} image={item.image_url} /></td>
                                         <td className="mono">{item.part_number || '—'}{item.family ? <span className="cell-note">{item.family}</span> : null}</td>
@@ -114,9 +121,9 @@ export default function Items() {
                                 ))}
                             </tbody>
                         </table>
-                        {data && filtered.length === 0 ? <p className="empty">{t('empty')}</p> : null}
+                        {data && rows.length === 0 ? <p className="empty">{t('empty')}</p> : null}
                     </div>
-                    <Pager page={page.page} pages={page.pages} total={page.total} from={page.from} to={page.to} onPage={page.setPage} />
+                    <Pager page={page} pages={data?.pages || 1} total={data?.total || 0} from={data?.from || 0} to={data?.to || 0} onPage={setPage} />
                 </Load>
             </div>
             {open && manage && options.data ? (

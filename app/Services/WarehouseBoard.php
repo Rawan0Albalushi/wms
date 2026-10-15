@@ -21,6 +21,7 @@ use App\Models\Supplier;
 use App\Models\Unit;
 use App\Support\StoredImage;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 
 class WarehouseBoard
@@ -30,24 +31,27 @@ class WarehouseBoard
      */
     public function board(): array
     {
-        $items = $this->itemQuery()->get();
-        $presented = $items->map(fn (Item $item) => $this->presentItem($item))->values();
-        $onHand = (int) $presented->sum('on_hand');
-        $reserved = (int) $presented->sum('reserved');
-        $value = (int) $presented->sum(fn (array $item) => $item['on_hand'] * $item['unit_cost']);
+        $onHand = (int) Balance::query()->sum('quantity');
+        $reserved = (int) Balance::query()->sum('reserved');
+        $value = (int) Balance::query()
+            ->join('batches', 'batches.id', '=', 'balances.batch_id')
+            ->join('items', 'items.id', '=', 'batches.item_id')
+            ->selectRaw('COALESCE(SUM(balances.quantity * items.unit_cost), 0) as aggregate')
+            ->value('aggregate');
         $shortages = $this->shortages();
         $jobs = $this->jobs();
         $shipments = $this->shipments();
+        $alerts = $this->alerts($shortages);
 
         return [
             'stats' => [
-                'skus' => $presented->count(),
+                'skus' => Item::query()->count(),
                 'on_hand' => $onHand,
                 'reserved' => $reserved,
                 'available' => $onHand - $reserved,
                 'value' => $value,
                 'pending' => collect($shortages)->where('status', 'pending')->count(),
-                'alerts' => Alert::query()->count(),
+                'alerts' => count($alerts),
                 'jobs_open' => collect($jobs)->where('status', '!=', 'closed')->count(),
                 'shipments_open' => collect($shipments)->where('status', '!=', 'received')->count(),
                 'locations' => Location::query()->count(),
@@ -57,8 +61,11 @@ class WarehouseBoard
                     ->selectRaw('count(distinct location_id) as aggregate')
                     ->value('aggregate'),
             ],
-            'tasks' => $this->tasks($shortages, $presented),
-            'items' => $presented,
+            'tasks' => $this->tasks($shortages),
+            'categories' => $this->categoryTotals(),
+            'conditions' => $this->conditionTotals(),
+            'top_value' => $this->topValue(),
+            'low' => $this->belowMinimum(),
             'suppliers' => Supplier::query()->orderBy('code')->get(['id', 'code', 'name', 'name_en', 'contact_name', 'phone']),
             'requests' => $this->requests(),
             'orders' => $this->orders(),
@@ -66,19 +73,27 @@ class WarehouseBoard
             'jobs' => $jobs,
             'shortages' => $shortages,
             'count' => $this->openCount(),
-            'alerts' => $this->alerts(),
-            'movements' => $this->movements()->take(12)->values(),
+            'alerts' => $alerts,
+            'movements' => $this->movements(12),
             'trend' => $this->movementTrend(),
         ];
     }
 
     /**
-     * @return array<int, array<string, mixed>>
+     * One page of item rows for the catalog table. Batch lines stay on the item card.
+     *
+     * @return array<string, mixed>
      */
-    public function items(?string $term = null): array
+    public function items(Request $request): array
     {
-        $query = $this->itemQuery();
-        $term = trim(str_replace(['%', '_'], '', (string) $term));
+        $term = trim(str_replace(['%', '_'], '', $request->string('q')->toString()));
+        $status = $request->string('status')->toString();
+        $unit = $request->string('unit')->toString();
+        $family = $request->string('family')->toString();
+        $place = trim(str_replace(['%', '_'], '', $request->string('place')->toString()));
+        $page = max(1, $request->integer('page', 1));
+        $perPage = min(50, max(1, $request->integer('per_page', 50)));
+        $query = Item::query();
 
         if ($term !== '') {
             $query->where(function (Builder $inner) use ($term) {
@@ -88,10 +103,58 @@ class WarehouseBoard
                     ->orWhere('part_number', 'like', "%{$term}%")
                     ->orWhere('barcode', 'like', "%{$term}%")
                     ->orWhere('family', 'like', "%{$term}%");
+            })->orderByRaw(
+                'case when code = ? or part_number = ? or barcode = ? then 0 else 1 end',
+                [$term, $term, $term],
+            );
+        }
+
+        if (in_array($status, ['rop', 'sufficient'], true)) {
+            $query->where('stock_status', $status);
+        }
+
+        if ($unit !== '') {
+            $query->whereHas('unit', fn (Builder $inner) => $inner->where('code', $unit));
+        }
+
+        if ($family !== '') {
+            $query->where('family', $family);
+        }
+
+        if ($place !== '') {
+            $like = '%'.$place.'%';
+            $query->where(function (Builder $inner) use ($like) {
+                $inner->whereHas('batches.balances.location', fn (Builder $location) => $location->where('code', 'like', $like))
+                    ->orWhereHas('recordedPositions.location', fn (Builder $location) => $location->where('code', 'like', $like));
             });
         }
 
-        return $query->get()->map(fn (Item $item) => $this->presentItem($item))->values()->all();
+        $paginator = $query
+            ->with([
+                'unit:id,code',
+                'batches' => fn ($batch) => $batch->select('id', 'item_id')->with([
+                    'balances' => fn ($balance) => $balance
+                        ->select('id', 'batch_id', 'location_id', 'quantity')
+                        ->where('quantity', '>', 0)
+                        ->with('location:id,code'),
+                ]),
+                'recordedPositions' => fn ($row) => $row->select('id', 'item_id', 'location_id')->with('location:id,code'),
+            ])
+            ->withSum('balances as on_hand', 'quantity')
+            ->withSum('balances as reserved_sum', 'reserved')
+            ->orderBy('code')
+            ->paginate($perPage, ['*'], 'page', $page);
+
+        return [
+            'data' => collect($paginator->items())->map(fn (Item $item) => $this->presentItemSummary($item))->values()->all(),
+            'page' => $paginator->currentPage(),
+            'pages' => max(1, $paginator->lastPage()),
+            'total' => $paginator->total(),
+            'from' => $paginator->firstItem() ?? 0,
+            'to' => $paginator->lastItem() ?? 0,
+            'units' => Unit::query()->orderBy('code')->pluck('code')->all(),
+            'families' => Item::query()->whereNotNull('family')->where('family', '!=', '')->distinct()->orderBy('family')->pluck('family')->all(),
+        ];
     }
 
     /**
@@ -220,12 +283,20 @@ class WarehouseBoard
     /**
      * @return array<string, mixed>
      */
-    public function options(): array
+    public function options(string $scope = ''): array
     {
-        return [
+        $payload = [
             'categories' => Category::query()->orderBy('code')->get(['id', 'code', 'name_ar', 'name_en']),
             'units' => Unit::query()->orderBy('code')->get(['id', 'code', 'name_ar', 'name_en']),
             'suppliers' => Supplier::query()->orderBy('code')->get(['id', 'code', 'name', 'name_en']),
+        ];
+
+        if ($scope === 'catalog') {
+            return $payload;
+        }
+
+        return [
+            ...$payload,
             'locations' => Location::query()->orderBy('code')->get()->map(fn (Location $location) => [
                 'id' => $location->id,
                 'code' => $location->code,
@@ -280,7 +351,7 @@ class WarehouseBoard
     /**
      * @return array<string, mixed>
      */
-    public function inventory(): array
+    public function inventory(bool $moves = true): array
     {
         return [
             'locations' => $this->locations(),
@@ -309,7 +380,7 @@ class WarehouseBoard
                     'recorded_on' => optional($row->recorded_on)->toDateString(),
                 ])
                 ->values(),
-            'movements' => $this->movements(),
+            'movements' => $moves ? $this->movements() : [],
         ];
     }
 
@@ -359,12 +430,12 @@ class WarehouseBoard
     /**
      * @return array<int, array<string, mixed>>
      */
-    public function alerts(): array
+    public function alerts(?array $shortages = null): array
     {
-        $shortageQty = collect($this->shortages())->pluck('shortage', 'item_id');
+        $shortageQty = collect($shortages ?? $this->shortages())->pluck('shortage', 'item_id');
 
         return Alert::query()
-            ->with('item.batches.balances')
+            ->with(['item' => fn ($query) => $query->withSum('balances as on_hand', 'quantity')])
             ->orderByRaw("case severity when 'high' then 0 when 'medium' then 1 else 2 end")
             ->orderByDesc('id')
             ->get()
@@ -423,19 +494,25 @@ class WarehouseBoard
      */
     public function reports(): array
     {
-        $items = $this->itemQuery()->get()->map(fn (Item $item) => $this->presentItem($item));
+        $items = Item::query()
+            ->with('unit:id,code')
+            ->withSum('balances as on_hand', 'quantity')
+            ->withSum('balances as reserved_sum', 'reserved')
+            ->orderBy('code')
+            ->get();
+        $movements = $this->movements();
 
         return [
-            'current' => $items->map(fn (array $item) => [
-                'code' => $item['code'],
-                'part_number' => $item['part_number'],
-                'name_ar' => $item['name_ar'],
-                'name_en' => $item['name_en'],
-                'image_url' => $item['image_url'],
-                'unit' => $item['unit'],
-                'on_hand' => $item['on_hand'],
-                'available' => $item['available'],
-                'value' => $item['on_hand'] * $item['unit_cost'],
+            'current' => $items->map(fn (Item $item) => [
+                'code' => $item->code,
+                'part_number' => $item->part_number,
+                'name_ar' => $item->name_ar,
+                'name_en' => $item->name_en,
+                'image_url' => StoredImage::url($item->image_path),
+                'unit' => $item->unit->code,
+                'on_hand' => (int) $item->on_hand,
+                'available' => (int) $item->on_hand - (int) $item->reserved_sum,
+                'value' => (int) $item->on_hand * (int) $item->unit_cost,
             ])->values(),
             'by_location' => Balance::query()->with(['batch.item', 'location'])->where('quantity', '>', 0)->orderBy('location_id')->get()->map(fn (Balance $balance) => [
                 'location' => $balance->location?->code,
@@ -447,8 +524,8 @@ class WarehouseBoard
                 'quantity' => $balance->quantity,
                 'condition' => $balance->batch->condition,
             ])->values(),
-            'movements' => $this->movements(),
-            'used' => $this->movements()->filter(fn (array $row) => in_array($row['type'], ['consume', 'out'], true) && $row['reason'] === 'job_order')->values(),
+            'movements' => $movements->values(),
+            'used' => $movements->filter(fn (array $row) => in_array($row['type'], ['consume', 'out'], true) && $row['reason'] === 'job_order')->values(),
             'batches' => Balance::query()->with(['batch.item', 'location'])->where('quantity', '>', 0)->orderBy('id')->get()->map(fn (Balance $balance) => [
                 'id' => $balance->id,
                 'batch' => $balance->batch->batch_no,
@@ -464,14 +541,14 @@ class WarehouseBoard
                 'received_on' => optional($balance->batch->received_on)->toDateString(),
                 'expires_on' => optional($balance->batch->expires_on)->toDateString(),
             ])->values(),
-            'low' => $items->filter(fn (array $item) => $item['stock_status'] === 'rop' || ($item['min_level'] > 0 && $item['on_hand'] <= $item['min_level']))->map(fn (array $item) => [
-                'code' => $item['code'],
-                'name_ar' => $item['name_ar'],
-                'name_en' => $item['name_en'],
-                'image_url' => $item['image_url'],
-                'on_hand' => $item['on_hand'],
-                'min_level' => $item['min_level'],
-                'stock_status' => $item['stock_status'],
+            'low' => $items->filter(fn (Item $item) => $item->stock_status === 'rop' || ($item->min_level > 0 && (int) $item->on_hand <= $item->min_level))->map(fn (Item $item) => [
+                'code' => $item->code,
+                'name_ar' => $item->name_ar,
+                'name_en' => $item->name_en,
+                'image_url' => StoredImage::url($item->image_path),
+                'on_hand' => (int) $item->on_hand,
+                'min_level' => $item->min_level,
+                'stock_status' => $item->stock_status,
             ])->values(),
             'counts' => StockCount::query()->with('lines.item', 'lines.location')->orderByDesc('id')->get()->map(fn (StockCount $count) => $this->presentCount($count))->values(),
         ];
@@ -479,10 +556,9 @@ class WarehouseBoard
 
     /**
      * @param  array<int, array<string, mixed>>  $shortages
-     * @param  Collection<int, array<string, mixed>>  $items
      * @return array<int, array<string, mixed>>
      */
-    private function tasks(array $shortages, Collection $items): array
+    private function tasks(array $shortages): array
     {
         $tasks = [];
         $shipments = Shipment::query()->with('purchaseOrder')->orderBy('expected_on')->get();
@@ -556,15 +632,12 @@ class WarehouseBoard
             ];
         }
 
-        foreach ($items as $item) {
-            if ($item['min_level'] > 0 && $item['on_hand'] <= $item['min_level'] && ! in_array($item['code'], $bought, true)) {
-                $qty = max(1, $item['min_level'] - $item['on_hand']);
-                $tasks[] = [
-                    'kind' => 'buy',
-                    'ref' => $item['code'],
-                    'href' => '/procurement?new=request&item='.$item['id'].'&qty='.$qty,
-                ];
-            }
+        foreach ($this->replenishmentCandidates($bought) as $item) {
+            $tasks[] = [
+                'kind' => 'buy',
+                'ref' => $item->code,
+                'href' => $this->buyHref((int) $item->id, max(1, (int) $item->min_level - (int) $item->on_hand)),
+            ];
         }
 
         return array_slice($tasks, 0, 12);
@@ -594,7 +667,7 @@ class WarehouseBoard
             return 1;
         }
 
-        $onHand = (int) $alert->item->batches->sum(fn (Batch $batch) => $batch->balances->sum('quantity'));
+        $onHand = (int) $alert->item->on_hand;
 
         return max(1, $alert->item->min_level - $onHand);
     }
@@ -737,11 +810,161 @@ class WarehouseBoard
     }
 
     /**
-     * @return Builder<Item>
+     * @return array<string, mixed>
      */
-    private function itemQuery(): Builder
+    private function presentItemSummary(Item $item): array
     {
-        return Item::query()->with(['category', 'unit', 'supplier', 'batches.balances.location', 'recordedPositions.location'])->orderBy('code');
+        $onHand = (int) $item->on_hand;
+        $reserved = (int) $item->reserved_sum;
+
+        return [
+            'id' => $item->id,
+            'code' => $item->code,
+            'part_number' => $item->part_number,
+            'barcode' => $item->barcode,
+            'image_url' => StoredImage::url($item->image_path),
+            'name_ar' => $item->name_ar,
+            'name_en' => $item->name_en,
+            'min_level' => $item->min_level,
+            'unit_cost' => $item->unit_cost,
+            'category_id' => $item->category_id,
+            'unit_id' => $item->unit_id,
+            'supplier_id' => $item->supplier_id,
+            'on_hand' => $onHand,
+            'available' => $onHand - $reserved,
+            'unit' => $item->unit->code,
+            'stock_status' => $item->stock_status,
+            'family' => $item->family,
+            'locations' => $item->batches
+                ->flatMap(fn (Batch $batch) => $batch->balances->map(fn (Balance $balance) => $balance->location?->code))
+                ->filter()
+                ->unique()
+                ->values(),
+            'recorded_locations' => $item->recordedPositions
+                ->map(fn (RecordedPosition $row) => $row->location?->code)
+                ->filter()
+                ->unique()
+                ->values(),
+        ];
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function categoryTotals(): array
+    {
+        return Balance::query()
+            ->join('batches', 'batches.id', '=', 'balances.batch_id')
+            ->join('items', 'items.id', '=', 'batches.item_id')
+            ->join('categories', 'categories.id', '=', 'items.category_id')
+            ->groupBy('categories.id', 'categories.name_ar', 'categories.name_en')
+            ->orderByRaw('SUM(balances.quantity) desc')
+            ->selectRaw('categories.id as id, categories.name_ar as name_ar, categories.name_en as name_en, SUM(balances.quantity) as value')
+            ->get()
+            ->map(fn ($row) => [
+                'id' => $row->id,
+                'name_ar' => $row->name_ar,
+                'name_en' => $row->name_en,
+                'value' => (int) $row->value,
+            ])
+            ->all();
+    }
+
+    /**
+     * @return array<int, array{key: string, value: int}>
+     */
+    private function conditionTotals(): array
+    {
+        $totals = Balance::query()
+            ->join('batches', 'batches.id', '=', 'balances.batch_id')
+            ->where('balances.quantity', '>', 0)
+            ->groupBy('batches.condition')
+            ->select('batches.condition as batch_condition')
+            ->selectRaw('SUM(balances.quantity) as value')
+            ->pluck('value', 'batch_condition');
+
+        return collect(['new', 'used', 'damaged'])->map(fn (string $key) => [
+            'key' => $key,
+            'value' => (int) ($totals[$key] ?? 0),
+        ])->all();
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function topValue(int $limit = 5): array
+    {
+        return Item::query()
+            ->select('items.id', 'items.code', 'items.name_ar', 'items.name_en', 'items.unit_cost')
+            ->selectRaw('COALESCE(SUM(balances.quantity), 0) * items.unit_cost as stock_value')
+            ->leftJoin('batches', 'batches.item_id', '=', 'items.id')
+            ->leftJoin('balances', 'balances.batch_id', '=', 'batches.id')
+            ->groupBy('items.id', 'items.code', 'items.name_ar', 'items.name_en', 'items.unit_cost')
+            ->havingRaw('COALESCE(SUM(balances.quantity), 0) * items.unit_cost > 0')
+            ->orderByDesc('stock_value')
+            ->limit($limit)
+            ->get()
+            ->map(fn (Item $item) => [
+                'id' => $item->id,
+                'code' => $item->code,
+                'name_ar' => $item->name_ar,
+                'name_en' => $item->name_en,
+                'value' => (int) $item->stock_value,
+            ])
+            ->all();
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function belowMinimum(int $limit = 5): array
+    {
+        return Item::query()
+            ->select('items.id', 'items.code', 'items.name_ar', 'items.name_en', 'items.image_path', 'items.min_level', 'items.stock_status')
+            ->selectRaw('COALESCE(SUM(balances.quantity), 0) as on_hand')
+            ->leftJoin('batches', 'batches.item_id', '=', 'items.id')
+            ->leftJoin('balances', 'balances.batch_id', '=', 'batches.id')
+            ->where(function (Builder $query) {
+                $query->where('items.stock_status', 'rop')->orWhere('items.min_level', '>', 0);
+            })
+            ->groupBy('items.id', 'items.code', 'items.name_ar', 'items.name_en', 'items.image_path', 'items.min_level', 'items.stock_status')
+            ->get()
+            ->filter(fn (Item $item) => $item->stock_status === 'rop' || ($item->min_level > 0 && (int) $item->on_hand <= $item->min_level))
+            ->sortBy(fn (Item $item) => (int) $item->on_hand - $item->min_level)
+            ->take($limit)
+            ->map(fn (Item $item) => [
+                'id' => $item->id,
+                'code' => $item->code,
+                'name_ar' => $item->name_ar,
+                'name_en' => $item->name_en,
+                'image_url' => StoredImage::url($item->image_path),
+                'on_hand' => (int) $item->on_hand,
+                'min_level' => $item->min_level,
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  list<string>  $excludeCodes
+     * @return Collection<int, Item>
+     */
+    private function replenishmentCandidates(array $excludeCodes): Collection
+    {
+        $query = Item::query()
+            ->select('items.id', 'items.code', 'items.min_level')
+            ->selectRaw('COALESCE(SUM(balances.quantity), 0) as on_hand')
+            ->leftJoin('batches', 'batches.item_id', '=', 'items.id')
+            ->leftJoin('balances', 'balances.batch_id', '=', 'batches.id')
+            ->where('items.min_level', '>', 0)
+            ->groupBy('items.id', 'items.code', 'items.min_level')
+            ->havingRaw('COALESCE(SUM(balances.quantity), 0) <= items.min_level');
+
+        if ($excludeCodes !== []) {
+            $query->whereNotIn('items.code', $excludeCodes);
+        }
+
+        return $query->get();
     }
 
     /**
@@ -888,7 +1111,7 @@ class WarehouseBoard
                 'in' => (int) $slice->where('type', 'in')->sum('quantity'),
                 'out' => (int) $slice->whereIn('type', ['out', 'consume'])->sum('quantity'),
             ];
-        })            ->all();
+        })->all();
     }
 
     /**
@@ -971,12 +1194,18 @@ class WarehouseBoard
     /**
      * @return Collection<int, array<string, mixed>>
      */
-    private function movements(): Collection
+    private function movements(?int $limit = null): Collection
     {
-        return Movement::query()
+        $query = Movement::query()
             ->with(['item', 'batch', 'fromLocation', 'toLocation', 'employee'])
             ->orderByDesc('happened_at')
-            ->orderByDesc('id')
+            ->orderByDesc('id');
+
+        if ($limit !== null) {
+            $query->limit($limit);
+        }
+
+        return $query
             ->get()
             ->map(function (Movement $movement) {
                 $sign = match ($movement->type) {
